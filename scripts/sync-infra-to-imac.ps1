@@ -26,7 +26,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$iMacHost = "192.168.1.50",
+    [string]$iMacHost = "192.168.120.11",
     [string]$iMacUser = "reaticle",
     [string]$RemoteDir = "~/project/wvp-infra",
     [int]$Port = 22,

@@ -18,9 +18,9 @@
 
 [CmdletBinding()]
 param(
-    [string]$iMacHost = "192.168.1.50",
+    [string]$iMacHost = "192.168.120.11",
     [string]$iMacUser = "reaticle",
-    [string]$RemoteDir = "~/wvp-aio-build",
+    [string]$RemoteDir = "~/project/wvp-aio-build",
     [int]$Port = 22
 )
 
@@ -43,7 +43,8 @@ if (-not (Test-Path $JarPath)) {
     if ($MatchedJars -and $MatchedJars.Count -gt 0) {
         $JarPath = $MatchedJars[0].FullName
         Write-Host "[Sync] 找到后端构建产物: $JarPath" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Warning "未在 target/ 下找到 wvp-pro-*.jar，若需预置打包同步，请先执行: mvn clean package -DskipTests"
     }
 }
@@ -72,7 +73,8 @@ if (Test-Path $OnvifSqlPath) {
     Write-Host "[Sync] 检测到 ONVIF 协议增量表结构 (增量-onvif.sql)，正在自动合流..." -ForegroundColor Green
     $OnvifSql = [System.IO.File]::ReadAllText($OnvifSqlPath)
     $CombinedSql = $BaseSql + "`n`n-- ==================== ONVIF INCREMENTAL TABLES ====================`n`n" + $OnvifSql
-} else {
+}
+else {
     $CombinedSql = $BaseSql
 }
 [System.IO.File]::WriteAllText($CombinedSqlPath, $CombinedSql, [System.Text.UTF8Encoding]::new($false))
@@ -99,7 +101,8 @@ if ($LASTEXITCODE -ne 0) {
 if (Test-Path $JarPath) {
     Write-Host "[Sync] 1/3 同步核心后端 Jar 包 (wvp.jar)..." -ForegroundColor Green
     scp -P $Port $JarPath "${SshTarget}:${RemoteDir}/wvp.jar"
-} else {
+}
+else {
     Write-Host "[Sync] 1/3 跳过 Jar 包同步（采用远程自包含构建模式）..." -ForegroundColor Yellow
 }
 
