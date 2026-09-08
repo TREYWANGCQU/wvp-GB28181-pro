@@ -598,6 +598,13 @@ Windows 11 默认可能会将局域网识别为公用网络（Public），从而
   curl -I http://192.168.1.100:18080
   ```
 
+### 8.2 Docker / 容器化部署网络约束
+
+> [!WARNING]
+> **WS-Discovery 多播广播必须配置 `network_mode: host`**：  
+> 在 Docker 容器或 Kubernetes 环境中，默认的 Bridge 桥接网络（如 `docker0` 虚拟网桥）会丢弃 `239.255.255.250:3702` 多播组播报文。  
+> 若将 WVP-PRO 容器化部署，**必须在 `docker-compose.yml` 中声明 `network_mode: host`**，否则 WS-Discovery 局域网探测将无法接收摄像头回包（此时只能使用单播指定 IP:Port 方式接入）。
+
 ---
 
 ## 附录：单机纯本地开发应急方案（外出备选）
