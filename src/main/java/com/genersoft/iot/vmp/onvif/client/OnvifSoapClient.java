@@ -41,7 +41,18 @@ public class OnvifSoapClient {
     public String sendAuthenticatedSoap(String serviceUrl, String soapAction, String innerBodyXml,
                                         String username, String password, long clockOffsetMillis) throws Exception {
         String headerXml = OnvifSecurityHeader.buildHeader(username, password, clockOffsetMillis);
-        String fullEnvelope = OnvifXmlBuilder.wrapEnvelope(headerXml, innerBodyXml);
+        String fullEnvelope;
+        if (innerBodyXml != null && innerBodyXml.contains("<s:Envelope")) {
+            if (innerBodyXml.contains("<s:Header/>")) {
+                fullEnvelope = innerBodyXml.replace("<s:Header/>", headerXml);
+            } else if (innerBodyXml.contains("<s:Header>")) {
+                fullEnvelope = innerBodyXml.replaceAll("<s:Header>.*?</s:Header>", headerXml);
+            } else {
+                fullEnvelope = OnvifXmlBuilder.wrapEnvelope(headerXml, innerBodyXml);
+            }
+        } else {
+            fullEnvelope = OnvifXmlBuilder.wrapEnvelope(headerXml, innerBodyXml);
+        }
         return executePost(serviceUrl, soapAction, fullEnvelope);
     }
 
