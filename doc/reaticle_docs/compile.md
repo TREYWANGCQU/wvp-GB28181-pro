@@ -2,7 +2,7 @@
 
 # 编译与开发指南
 
-WVP-PRO 不仅完整实现了 GB28181-2016 / 2022 的 SIP 信令协议，本身也是一个集流媒体控制、设备树管理、通道分屏播放、录像回放与语音对讲于一体的高性能安防视频管理平台。
+本分析WVP-PRO 可实现 GB28181-2016 / 2022 的 SIP 信令协议与 ONVIF Profile S/T 原生协议接入，本身也是一个集流媒体控制、设备树管理、通道分屏播放、录像回放与语音对讲于一体的高性能安防视频管理平台。
 
 为了让开发者以最快速度搭建起干净、高可用、可断点调试的研发环境，本文档基于真实敏捷工程实践，提供 **“主开发机（Windows 11） + 配合开发机（iMac 26.1 Colima Docker）”** 的双机协同开发方案。
 
@@ -16,11 +16,11 @@ WVP-PRO 不仅完整实现了 GB28181-2016 / 2022 的 SIP 信令协议，本身�
 
 ## 1 服务架构与双机协同拓扑
 
-在完整的 WVP-PRO 国标安防视频体系中，核心角色分工如下：
+在完整的 WVP-PRO 视频监控体系中（支持 GB28181 国标与 ONVIF 双协议），核心角色分工如下：
 
 | 服务角色 | 功能说明 | 推荐宿主环境 | 是否必须 |
 |---|---|---|---|
-| **WVP-PRO** | SIP 信令交互、设备/通道注册管理、PTZ 控制及业务控制 RESTful/Hook API | **主开发机（Windows 11）** 本地运行与断点调试 | **是** |
+| **WVP-PRO** | SIP / ONVIF (SOAP/WS-Discovery) 信令交互、设备/通道注册纳管、PTZ 控制及业务控制 RESTful/Hook API | **主开发机（Windows 11）** 本地运行与断点调试 | **是** |
 | **Vue Web 前端** | 设备监控树、分屏点播播放、录像回放、系统配置及对讲交互界面 | **主开发机（Windows 11）** 热重载开发或编译静态资源 | **是** |
 | **ZLMediaKit (ZLM)** | 高性能流媒体服务器，负责 RTP 媒体流收发、音视频转码分发（WebRTC/RTSP/RTMP/FLV/HLS）及语音对讲处理 | **配合开发机（iMac 26.1 Colima Docker）** | **是** |
 | **MySQL 8.0** | 持久化存储设备、通道、录像计划与平台配置数据 | **配合开发机（iMac 26.1 Colima Docker）** | **是**（支持 H2 临时替代） |
@@ -41,8 +41,8 @@ WVP-PRO 不仅完整实现了 GB28181-2016 / 2022 的 SIP 信令协议，本身�
 |   |  WVP-PRO (Spring Boot)   |   |   DevServer (:9528)  |   |       |   |                                                     |   |
 |   |       Port: 18080        |   +----------+-----------+   |       |   |   [MySQL 8.0 Container]      [Redis Container]          |   |
 |   |      SIP Port: 8116      |              | Proxy         |       |   |        Port: 3306                Port: 6379             |   |
-|   +------------+-------------+<-------------+               |       |   |                                                     |   |
-|                |                                            |  LAN  |   |   [ZLMediaKit Container]                            |   |
+|   |   ONVIF Discovery: 3702  |              |               |       |   |                                                     |   |
+|   +------------+-------------+<-------------+               |       |   |   [ZLMediaKit Container]                            |   |
 |                |  JDBC / Redis 访问连接                       | 网络  |   |   - HTTP API: 9092       - RTSP: 554                |   |
 |                +============================================+======>|   |   - RTMP: 1935           - WebRTC: 8000/udp         |   |
 |                |                                            |       |   |   - RTP 收流端口段: 40000~45000 (UDP/TCP)               |   |
@@ -492,16 +492,19 @@ mvn clean package -P war -DskipTests
 
 ## 8 双机协同网络与防火墙通信矩阵
 
-双机协同以及国标设备推拉流涉及的端口及数据流向关系如下，请对照检查两端网络通畅：
+双机协同、国标设备推拉流及 ONVIF 设备接入涉及的端口及数据流向关系如下，请对照检查两端网络通畅：
 
 | 来源端 | 目标端 | 端口号 | 传输协议 | 作用说明 | 必选 |
 |---|---|---|---|---|---|
-| **国标摄像头 / 设备** | **主开发机 (Win 11)** | `8116` / `5060` | UDP & TCP | GB28181 SIP 信令注册、心跳与控制交互 | **是** |
+| **国标摄像头 / 设备** | **主开发机 (Win 11)** | `8116` / `5060` | UDP & TCP | GB28181 SIP 信令注册、心跳与控制交互 | **是**（国标） |
+| **ONVIF 摄像头 / 设备** | **主开发机 (Win 11)** | `3702` | UDP | WS-Discovery 局域网设备自发现（多播/单播应答） | **是**（ONVIF） |
+| **主开发机 (Win 11)** | **ONVIF 摄像头 / 设备** | `80` / `8080` / `8899` | TCP | ONVIF SOAP 信令交互（设备信息、PTZ、Profile 等） | **是**（ONVIF） |
 | **主开发机 (Win 11)** | **配合机 (iMac)** | `3306` | TCP | WVP 后端访问 MySQL 8.0 数据库 | **是** |
 | **主开发机 (Win 11)** | **配合机 (iMac)** | `6379` | TCP | WVP 后端读写 Redis 状态与锁 | **是** |
 | **主开发机 (Win 11)** | **配合机 (iMac)** | `9092` (HTTP) | TCP | WVP 向 ZLM 发送 RESTful 控制指令 | **是** |
 | **配合机 (iMac: ZLM)**| **主开发机 (Win 11)** | `18080` (HTTP) | TCP | ZLM 向 WVP 发送流上下线 Webhook 回调（**易被 Win 防火墙拦截**） | **是** |
-| **国标摄像头 / 设备** | **配合机 (iMac: ZLM)**| `40000~45000` | UDP & TCP | GB28181 摄像头推送 PS-RTP 音视频媒体流 | **是** |
+| **国标摄像头 / 设备** | **配合机 (iMac: ZLM)**| `40000~45000` | UDP & TCP | GB28181 摄像头推送 PS-RTP 音视频媒体流 | **是**（国标） |
+| **配合机 (iMac: ZLM)**| **ONVIF 摄像头 / 设备** | `554` | TCP | ZLMediaKit 主动向摄像头拉取 RTSP 音视频流（出站拉流代理） | **是**（ONVIF） |
 | **客户端浏览器** | **配合机 (iMac: ZLM)**| `8000` | UDP | WebRTC 语音对讲与超低延迟拉流 | **是**（对讲必选）|
 | **客户端浏览器** | **主开发机 (Win 11)** | `18080` / `9528` | TCP | 访问 WVP 管理后台 Web 界面 | **是** |
 
@@ -532,6 +535,9 @@ Windows 11 默认可能会将局域网识别为公用网络（Public），从而
 
   # 3. (可选) 放行前端开发热重载服务端口（9528 TCP）
   New-NetFirewallRule -DisplayName "WVP-PRO Web Dev (9528 TCP)" -Direction Inbound -LocalPort 9528 -Protocol TCP -Action Allow
+
+  # 4. (若使用 ONVIF) 放行 WS-Discovery 局域网设备多播与探测应答端口（3702 UDP）
+  New-NetFirewallRule -DisplayName "WVP-PRO ONVIF Discovery (3702 UDP)" -Direction Inbound -LocalPort 3702 -Protocol UDP -Action Allow
   ```
 
 #### 2. iMac 配合机防火墙与容器端口监听（macOS 终端）
