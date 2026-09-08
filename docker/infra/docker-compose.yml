@@ -1,0 +1,71 @@
+# docker/infra/docker-compose.yml
+version: '3.8'
+
+services:
+  # MySQL 8.0 持久化服务
+  wvp-mysql:
+    image: mysql:8.0
+    container_name: wvp-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: wvp
+      MYSQL_USER: wvp_user
+      MYSQL_PASSWORD: wvp_password
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./mysql/initdb:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    networks:
+      - wvp-net
+
+  # Redis 缓存服务
+  wvp-redis:
+    image: redis:7.0
+    container_name: wvp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    networks:
+      - wvp-net
+
+  # ZLMediaKit 高性能流媒体服务（支持 WebRTC 语音对讲与 RTP 收流）
+  wvp-zlm:
+    image: zlmediakit/zlmediakit:master
+    container_name: wvp-zlm
+    restart: always
+    ports:
+      - "9092:80"                      # HTTP REST API & 流播放
+      - "1935:1935"                    # RTMP
+      - "554:554"                      # RTSP
+      - "8000:8000/udp"                # WebRTC 语音对讲核心端口 (UDP)
+      - "10000:10000/udp"
+      - "10000:10000/tcp"
+      - "40000-40050:40000-40050/udp"  # GB28181 RTP 收流端口段
+      - "40000-40050:40000-40050/tcp"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./zlm/config.ini:/opt/media/conf/config.ini:ro
+      - zlm-record:/opt/media/bin/www/record
+    command: ["MediaServer", "-c", "/opt/media/conf/config.ini", "-l", "0"]
+    networks:
+      - wvp-net
+
+networks:
+  wvp-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  zlm-record:

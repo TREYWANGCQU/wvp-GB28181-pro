@@ -96,33 +96,45 @@ colima start --cpu 4 --memory 4
 ipconfig getifaddr en0
 ```
 
-### 3.2 组织配置与挂载目录结构
+### 3.2 中间件编排目录与工程化资产准备
 
-在 iMac 上建立统一的中间件编排目录（例如 `~/wvp-infra`）：
+项目已将调试环境所需的编排资产完整固化在工程源码的 `docker/infra/` 目录下，并提供了 Windows 11 至 iMac 的一键自动化同步运维脚本 [scripts/sync-infra-to-imac.ps1](../../scripts/sync-infra-to-imac.ps1)。
 
-```bash
-mkdir -p ~/wvp-infra/{mysql/conf.d,mysql/initdb,redis,zlm}
-cd ~/wvp-infra
-```
-
-规划目录层级如下：
+工程目录层级规划如下：
 ```text
-~/wvp-infra/
-├── docker-compose.yml       # 统一编排文件
-├── mysql/
-│   ├── conf.d/my.cnf        # MySQL 字符集、大小写敏感等定制配置
-│   └── initdb/              # 数据库初始化表结构脚本目录
-│       ├── 01-init.sql      # 基础全量表结构 (初始化-mysql-2.7.4.sql)
-│       └── 02-onvif.sql     # ONVIF 增量表结构 (增量-onvif.sql)
-├── redis/
-│   └── redis.conf           # Redis 端口、网络绑定与密码配置
-└── zlm/
-    └── config.ini           # ZLMediaKit API Secret、端口与 WebRTC 配置
+wvp-GB28181-pro/
+├── docker/
+│   └── infra/                  # 调试环境中间件编排资产 (工程基线)
+│       ├── docker-compose.yml  # 统一编排文件 (MySQL 8.0 + Redis 7.0 + ZLM)
+│       ├── README.md           # 调试环境操作指引与备忘
+│       ├── mysql/
+│       │   ├── conf.d/my.cnf   # MySQL 字符集、表名大小写忽略定制配置
+│       │   └── initdb/         # 容器首次启动自动执行的初始化 SQL 目录
+│       │       ├── 01-init.sql # 基础全量表结构 (由脚本自 数据库/2.7.4/ 自动归位)
+│       │       └── 02-onvif.sql# ONVIF 增量表结构 (由脚本自 数据库/2.7.4/ 自动归位)
+│       ├── redis/
+│       │   └── redis.conf      # Redis 端口绑定、AOF 持久化与连接参数
+│       └── zlm/
+│           └── config.ini      # ZLMediaKit API Secret、端口与 WebRTC 配置
+└── scripts/
+    └── sync-infra-to-imac.ps1  # Windows 11 -> iMac 中间件资产极速增量同步脚本
 ```
 
-### 3.3 映射配置文件准备
+在 iMac 配合机上，同步脚本将自动建立并映射到对应的运行目录 `~/project/wvp-infra/`(默认路径)。
 
-#### 1. MySQL 定制配置 (`mysql/conf.d/my.cnf`)
+---
+
+### 3.3 初始数据库同步机制与映射配置说明
+
+#### 1. 初始数据库与 ONVIF 增量表自动同步机制
+MySQL 官方容器在首次启动（即数据卷 `mysql-data` 为空）时，会自动按字典序执行挂载在 `/docker-entrypoint-initdb.d/` 目录下的所有 `.sql` 文件：
+- **`01-init.sql`**：对应 [数据库/2.7.4/初始化-mysql-2.7.4.sql](../../数据库/2.7.4/初始化-mysql-2.7.4.sql)，负责全量基础表结构的创建与种子数据导入；
+- **`02-onvif.sql`**：对应 [数据库/2.7.4/增量-onvif.sql](../../数据库/2.7.4/增量-onvif.sql)，负责创建 `wvp_onvif_device` 与 `wvp_onvif_channel` 等协议核心表。
+
+> [!TIP]
+> 无需手动繁琐复制！运行 [scripts/sync-infra-to-imac.ps1](../../scripts/sync-infra-to-imac.ps1) 脚本时，流水线会**自动拉取**最新的全量与增量 SQL 写入 `docker/infra/mysql/initdb/`，完成换行符清洗后一并同步至 iMac。
+
+#### 2. MySQL 定制配置 (`mysql/conf.d/my.cnf`)
 ```ini
 [mysqld]
 character-set-server=utf8mb4
@@ -132,13 +144,7 @@ default-time-zone=+08:00
 max_connections=1000
 ```
 
-将项目代码库中的全量建表与增量脚本拷贝或软链接至 `mysql/initdb/` 目录：
-- **基础全量表结构**：[数据库/2.7.4/初始化-mysql-2.7.4.sql](../../../数据库/2.7.4/初始化-mysql-2.7.4.sql)（命名为 `01-init.sql`）；
-- **ONVIF 增量表结构**：[数据库/2.7.4/增量-onvif.sql](../../../数据库/2.7.4/增量-onvif.sql)（命名为 `02-onvif.sql`）；
-
-容器首次创建时将按字典序自动执行建表与增量表初始化导入。
-
-#### 2. Redis 配置文件 (`redis/redis.conf`)
+#### 3. Redis 配置文件 (`redis/redis.conf`)
 ```ini
 bind 0.0.0.0
 protected-mode no
@@ -150,7 +156,7 @@ appendonly yes
 # requirepass luna
 ```
 
-#### 3. ZLMediaKit 核心配置 (`zlm/config.ini`)
+#### 4. ZLMediaKit 核心配置 (`zlm/config.ini`)
 > [!IMPORTANT]
 > **语音对讲为什么必须依赖 WebRTC？**  
 > 国标双向语音对讲由前端 Web 浏览器采集麦克风音频，通过 WebRTC 协议推送到 ZLM，再由 ZLM 转封装为 PS/RTP 广播给摄像头；反向音频流同样经由 ZLM 解封装通过 WebRTC 拉流送回浏览器播放。因此，**若要使用语音对讲功能，ZLM 必须开启 WebRTC 支持**。官方 Docker 镜像已原生内置 WebRTC 模块。
@@ -179,9 +185,11 @@ port=10000
 port_range=40000-40050
 ```
 
-### 3.4 编写合并的 `docker-compose.yml`
+---
 
-在 `~/wvp-infra/docker-compose.yml` 中统一编排 MySQL 8.0、Redis 7.0 与 ZLMediaKit：
+### 3.4 统一编排文件 (`docker-compose.yml`)
+
+`docker/infra/docker-compose.yml` 统一编排 MySQL 8.0、Redis 7.0 与 ZLMediaKit：
 
 ```yaml
 version: '3.8'
@@ -256,11 +264,35 @@ volumes:
   zlm-record:
 ```
 
-### 3.5 一键启动与日常管理命令
+---
 
-在 iMac 的 `~/wvp-infra` 目录下执行：
+### 3.5 极速同步脚本与日常管理命令
+
+#### 1. 在 Windows 11 开发机执行一键同步与启动（推荐）
+
+我们在 `scripts/sync-infra-to-imac.ps1` 中集成了全套自动化流水线。在 Windows 终端中运行：
+
+```powershell
+# 场景 A：仅同步配置与初始化 SQL 到 iMac (~/project/wvp-infra)
+.\scripts\sync-infra-to-imac.ps1
+
+# 场景 B（推荐）：同步配置并一键在 iMac 上拉起容器
+.\scripts\sync-infra-to-imac.ps1 -Up
+
+# 场景 C：若配合机已有运行中的 MySQL（已有 mysql-data 数据卷），执行增量 ONVIF 表热升级
+.\scripts\sync-infra-to-imac.ps1 -UpgradeOnvif
+
+# 场景 D：更改了 ZLM/Redis 配置后，同步并重启容器
+.\scripts\sync-infra-to-imac.ps1 -Restart
+```
+
+#### 2. 在 iMac 配合机终端手动日常管理
+
+亦可直接在 iMac 的 `~/project/wvp-infra` 目录下执行标准 Docker 管理命令：
 
 ```bash
+cd ~/project/wvp-infra
+
 # 1. 一键后台拉起全部中间件服务
 docker compose up -d
 
@@ -273,8 +305,8 @@ docker compose logs -f wvp-zlm
 # 4. 停止并释放容器（数据持久保存在 Docker Volume 中，不会丢失）
 docker compose down
 
-# 5. 若已有 MySQL 容器需要就地升级 ONVIF 增量表（无需销毁已有 mysql-data 数据卷）：
-docker exec -i wvp-mysql mysql -uroot -proot wvp < 数据库/2.7.4/增量-onvif.sql
+# 5. 手动执行 ONVIF 增量表热升级：
+docker exec -i wvp-mysql mysql -uroot -proot wvp < mysql/initdb/02-onvif.sql
 ```
 
 ### 3.6 双机跨机通信与 Webhook 回调避坑铁律
@@ -617,5 +649,3 @@ Windows 11 默认可能会将局域网识别为公用网络（Public），从而
    访问 ZLMediaKit [官方 Release](https://github.com/ZLMediaKit/ZLMediaKit/issues/483) 下载 Windows 预编译压缩包，解压后双击运行 `MediaServer.exe`（官方发布包已内置 WebRTC 模块），并将 `media.ip` 与 `media.hook-ip` 均改回 `127.0.0.1`。
 
 ---
-
-接下来请查阅：[服务详细配置](config.md) 了解具体配置项说明与国标高级参数调优。
