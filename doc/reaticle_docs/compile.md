@@ -120,7 +120,7 @@ wvp-GB28181-pro/
     └── sync-infra-to-imac.ps1  # Windows 11 -> iMac 中间件资产极速增量同步脚本
 ```
 
-在 iMac 配合机上，同步脚本将自动建立并映射到对应的运行目录 `~/project/wvp-infra/`(默认路径)。
+在 iMac 配合机上，同步脚本将自动建立并映射到对应的运行目录 `~/projects/wvp-infra/`(默认路径)。
 
 ---
 
@@ -273,7 +273,7 @@ volumes:
 我们在 `scripts/sync-infra-to-imac.ps1` 中集成了全套自动化流水线。在 Windows 终端中运行：
 
 ```powershell
-# 场景 A：仅同步配置与初始化 SQL 到 iMac (~/project/wvp-infra)
+# 场景 A：仅同步配置与初始化 SQL 到 iMac (~/projects/wvp-infra)
 .\scripts\sync-infra-to-imac.ps1
 
 # 场景 B（推荐）：同步配置并一键在 iMac 上拉起容器
@@ -288,10 +288,10 @@ volumes:
 
 #### 2. 在 iMac 配合机终端手动日常管理
 
-亦可直接在 iMac 的 `~/project/wvp-infra` 目录下执行标准 Docker 管理命令：
+亦可直接在 iMac 的 `~/projects/wvp-infra` 目录下执行标准 Docker 管理命令：
 
 ```bash
-cd ~/project/wvp-infra
+cd ~/projects/wvp-infra
 
 # 1. 一键后台拉起全部中间件服务
 docker compose up -d

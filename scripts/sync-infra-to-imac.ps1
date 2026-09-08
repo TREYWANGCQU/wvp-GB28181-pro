@@ -28,7 +28,7 @@
 param(
     [string]$iMacHost = "192.168.120.11",
     [string]$iMacUser = "reaticle",
-    [string]$RemoteDir = "~/project/wvp-infra",
+    [string]$RemoteDir = "~/projects/wvp-infra",
     [int]$Port = 22,
     [switch]$Up,
     [switch]$Restart,

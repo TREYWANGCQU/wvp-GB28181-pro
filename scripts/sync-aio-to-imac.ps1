@@ -20,7 +20,7 @@
 param(
     [string]$iMacHost = "192.168.120.11",
     [string]$iMacUser = "reaticle",
-    [string]$RemoteDir = "~/project/wvp-aio-build",
+    [string]$RemoteDir = "~/projects/wvp-aio-build",
     [int]$Port = 22
 )
 
