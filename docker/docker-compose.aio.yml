@@ -1,0 +1,57 @@
+# docker/docker-compose.aio.yml
+version: '3.8'
+
+services:
+  wvp-aio:
+    image: reaticle/wvp-pro-aio:2.7.4
+    container_name: wvp-aio
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      # 容器内默认采用 127.0.0.1 闭环互通，如需外部注入可在此处覆盖
+      # SIP_HOST: 192.168.1.100
+    volumes:
+      # 1. 核心配置文件挂载（外挂热更新，重启容器生效）
+      - ./aio-data/config/application.yml:/opt/wvp/config/application.yml
+      - ./aio-data/config/zlm.ini:/opt/media/conf/config.ini
+      - ./aio-data/config/redis.conf:/etc/redis.conf
+      # 2. 持久化数据存储（数据物理落盘，容器销毁不丢失）
+      - ./aio-data/data/mysql:/var/lib/mysql
+      - ./aio-data/data/record:/opt/media/bin/www/record
+      # 3. 运行日志统一归集
+      - ./aio-data/logs/wvp:/opt/wvp/logs
+      - ./aio-data/logs/media:/opt/media/log
+      - ./aio-data/logs/mysql:/var/log/mysql
+    # -------------------------------------------------------------
+    # 模式 A: Linux 生产直通推荐（若启用 host 模式，请将下面的 ports 段全部注释）
+    # network_mode: host
+    # -------------------------------------------------------------
+    # 模式 B: 标准 Bridge 显式端口映射（兼容 macOS / Windows / 容器云）
+    ports:
+      # [核心 1] WVP 管理后台与 RESTful 接口
+      - "18080:18080/tcp"
+
+      # [核心 2] GB28181 SIP 信令接入（摄像头注册与心跳）
+      - "8116:8116/udp"
+      - "8116:8116/tcp"
+
+      # [核心 3] ZLMediaKit HTTP 流媒体点播 (HTTP-FLV / HLS) 与 REST API
+      - "9092:9092/tcp"
+
+      # [核心 4] WebRTC 媒体协商与语音对讲核心端口 (必须暴露 UDP)
+      - "8000:8000/udp"
+      - "8000:8000/tcp"
+
+      # [核心 5] 经典多媒体推拉流协议
+      - "1935:1935/tcp"    # RTMP 推拉流
+      - "1935:1935/udp"
+      - "554:554/tcp"      # RTSP 推拉流
+      - "554:554/udp"
+
+      # [核心 6] GB28181 RTP 国标媒体收流端口段（建议与 zlm.ini 的 port_range 一致）
+      - "30000-30050:30000-30050/udp"
+      - "30000-30050:30000-30050/tcp"
+
+      # [可选调试] 数据库与缓存管理端口（生产环境建议注释，避免暴露到公网）
+      - "3306:3306/tcp"    # MariaDB 数据库直连调试
+      - "6379:6379/tcp"    # Redis 缓存直连调试

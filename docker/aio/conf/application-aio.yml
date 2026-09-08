@@ -1,0 +1,48 @@
+# docker/aio/conf/application-aio.yml
+server:
+  port: 18080
+
+spring:
+  application:
+    name: wvp-pro-aio
+  profiles:
+    active: aio
+  data:
+    redis:
+      # 闭环直连本容器内置 Redis
+      host: 127.0.0.1
+      port: 6379
+      password: ""
+      database: 0
+  datasource:
+    # 闭环直连本容器内置 MariaDB
+    url: jdbc:mysql://127.0.0.1:3306/wvp?useUnicode=true&characterEncoding=UTF8&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&allowPublicKeyRetrieval=true
+    username: root
+    password: ""
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+sip:
+  # 容器暴露的 SIP 国标信令接入端口
+  port: 8116
+  # 若容器运行在 Bridge 模式下，推流摄像头需填写宿主机外部 IP；宿主机外部 IP 也可在启动时通过环境变量覆盖
+  ip: 0.0.0.0
+  id: 41010500002000000001
+  domain: 4101050000
+  password: admin
+
+media:
+  id: zlmediakit-aio
+  # 容器内部闭环通信：WVP -> ZLM
+  ip: 127.0.0.1
+  http-port: 9092
+  # 容器内部闭环通信：ZLM -> WVP (闭环通信规避宿主防火墙阻断)
+  hook-ip: 127.0.0.1
+  secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
+  auto-config: true
+
+logging:
+  file:
+    path: /opt/wvp/logs
+  level:
+    root: INFO
+    com.genersoft.wvp: INFO

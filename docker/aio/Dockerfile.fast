@@ -1,0 +1,118 @@
+# docker/aio/Dockerfile.fast
+
+# ==============================================================================
+# Stage 1: 基于目标平台生成微型定制 JRE (依赖 TARGETPLATFORM 保证指令集匹配)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM eclipse-temurin:21-jdk-alpine AS jre-builder
+
+RUN echo "[Stage 1] 正在针对目标架构执行 JRE 21 模块定制剥离 (jlink)..." && \
+    $JAVA_HOME/bin/jlink \
+    --add-modules java.base,java.compiler,java.desktop,java.instrument,java.management,java.naming,java.net.http,java.prefs,java.rmi,java.scripting,java.security.jgss,java.security.sasl,java.sql,java.sql.rowset,java.transaction.xa,java.xml,jdk.crypto.cryptoki,jdk.crypto.ec,jdk.unsupported,jdk.management \
+    --strip-debug \
+    --no-man-pages \
+    --no-header-files \
+    --compress=2 \
+    --output /opt/java-runtime
+
+# ==============================================================================
+# Stage 2: 目标架构编译 ZLMediaKit (针对 Alpine Linux musl libc 优化)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM alpine:3.20 AS zlm-builder
+
+RUN apk update && apk add --no-cache \
+    build-base \
+    cmake \
+    git \
+    linux-headers \
+    openssl-dev \
+    libsrtp-dev \
+    coreutils
+
+WORKDIR /build
+# 拉取 ZLMediaKit 核心源码并更新子模块
+RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
+    cd ZLMediaKit && git submodule update --init --recursive --depth 1
+
+WORKDIR /build/ZLMediaKit/build
+# 开启 WebRTC、关闭无用测试项、采用 Release 构建并剥离调试符号
+RUN cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_WEBRTC=ON \
+    -DENABLE_TESTS=OFF \
+    -DENABLE_API=ON \
+    -DENABLE_SERVER=ON && \
+    cmake --build . --target MediaServer -j$(nproc) && \
+    strip --strip-all /build/ZLMediaKit/release/linux/Release/MediaServer
+
+# ==============================================================================
+# Stage 3: 最终精简生产运行底座 (Alpine Linux 3.20)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM alpine:3.20 AS final-runner
+
+LABEL maintainer="reaticle <y.wang@reaticle.com>"
+LABEL description="WVP-PRO All-in-One: Java 21 + Vue UI + ZLM + MariaDB + Redis (Fast Prebuilt Mode)"
+
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8 \
+    JAVA_HOME=/opt/java-runtime \
+    PATH=/opt/java-runtime/bin:/opt/media/bin:$PATH
+
+# 1. 仅安装 Alpine 运行时依赖（剔除任何编译器）
+RUN apk update && apk add --no-cache \
+    bash \
+    curl \
+    tzdata \
+    ca-certificates \
+    mariadb \
+    mariadb-client \
+    redis \
+    libsrtp \
+    ffmpeg \
+    libstdc++ \
+    libgcc && \
+    cp /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone && \
+    rm -rf /var/cache/apk/* /var/lib/mysql/*
+
+# 2. 建立标准化目录布局
+RUN mkdir -p \
+    /opt/wvp/config \
+    /opt/wvp/templates \
+    /opt/wvp/logs \
+    /opt/media/bin \
+    /opt/media/conf \
+    /opt/media/bin/www/record \
+    /opt/media/log \
+    /var/lib/mysql \
+    /var/log/mysql \
+    /run/mysqld && \
+    chown -R mysql:mysql /var/lib/mysql /run/mysqld /var/log/mysql
+
+# 3. 装配组件产物
+# 3.1 拷入 JRE 21
+COPY --from=jre-builder /opt/java-runtime /opt/java-runtime
+# 3.2 拷入 ZLMediaKit 执行体与静态目录
+COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/MediaServer /opt/media/bin/MediaServer
+COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/default.pem /opt/media/bin/default.pem
+COPY --from=zlm-builder /build/ZLMediaKit/www/ /opt/media/bin/www/
+
+# 3.3 拷入 Windows/外部同步交付的预编译产物
+COPY wvp.jar /opt/wvp/wvp.jar
+COPY init.sql /opt/wvp/init.sql
+
+# 3.4 拷入出厂配置模板与守护引擎
+COPY docker/aio/conf/application-aio.yml /opt/wvp/templates/application-aio.yml
+COPY docker/aio/conf/zlm-config.ini /opt/wvp/templates/zlm-config.ini
+COPY docker/aio/conf/redis-aio.conf /opt/wvp/templates/redis-aio.conf
+COPY docker/aio/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# 修正执行权限并防止 CRLF 换行符异常
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh /opt/media/bin/MediaServer
+
+# 核心暴露端口声明
+EXPOSE 18080/tcp 8116/tcp 8116/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
+
+VOLUME ["/opt/wvp/config", "/opt/media/conf", "/var/lib/mysql", "/opt/media/bin/www/record", "/opt/wvp/logs"]
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

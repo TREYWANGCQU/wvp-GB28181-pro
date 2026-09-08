@@ -1,0 +1,874 @@
+<!-- doc/reaticle_docs/docker-all-in-one-implementation.md -->
+
+# WVP-PRO All-in-One 镜像双机协同编译与 Docker Hub 发布实施细则
+
+## 0 事实、研判与前置契约 (Fact, Judgment & Contract)
+
+### 0.1 已验证事实 (Fact)
+1. **主开发机（Windows 11）环境**：拥有原生 JDK 21（[pom.xml](../../pom.xml#L63)）、Maven 3.8+、Node.js（>= 18，兼容 `--openssl-legacy-provider`）及 Maven/npm 本地完整依赖缓存；项目版本为 `2.7.4`，Maven 默认产物为 `target/wvp-pro-2.7.4.jar`。
+2. **配合开发机（iMac 26.1）环境**：搭载 macOS 系统与 Colima 容器守护进程（Docker CLI），原生支持 Docker Buildx 容器化跨架构构建（[doc/reaticle_docs/compile.md](compile.md#L75)）。
+3. **架构与系统依赖**：
+   - 前端 Web（Vue CLI 4）与后端 Java 产物为平台无关资产（HTML/JS 静态文件与跨平台 JVM 字节码 Jar 包）。
+   - 流媒体引擎 ZLMediaKit（C++20）与精简版 JRE 21（`jlink` 产物）具有高度 CPU 架构绑定性与 OS C 运行时（Alpine musl libc）绑定性，必须在目标系统架构下完成编译与模块剥离。
+4. **数据库初始化脚本位置**：基准初始化建表脚本为 [数据库/2.7.4/初始化-mysql-2.7.4.sql](../../数据库/2.7.4/初始化-mysql-2.7.4.sql)。
+
+### 0.2 工程研判 (Judgment)
+1. **双机职责分工最优解**：
+   - **Windows 11 承担前置静态编译**：利用本机原生 CPU 与本地 Maven/npm 缓存完成前端 `npm run build:prod` 和后端 `mvn clean package`，单次打包仅需几十秒；彻底避免在 iMac 的 Docker 容器中拉取几百兆依赖，规避跨国网络下载波动与 QEMU 跨架构模拟编译的高额开销。
+   - **iMac 承担容器拼装、C++ 编译与多架构 Hub 发布**：基于 Colima 提供的 Linux 容器环境，运行 `docker buildx` 进行 `linux/amd64` 与 `linux/arm64` 双架构交叉编译，并直接推送至 Docker Hub。
+2. **资产同步极简主义**：
+   - 严禁全量同步代码仓库（避免传输 `.git` 版本库、`web/node_modules` 海量小文件及临时缓存）；
+   - 仅同步 **4 类最小资产集**：已编译的 `wvp-pro-2.7.4.jar`、Docker 构建资产（`docker/aio/` 目录）、数据库初始化 SQL 脚本（`init.sql`）以及构建触发脚本。
+3. **行尾序列（Line Ending）防卫契约**：
+   - Windows 平台生成的 Shell 脚本（特别是 `entrypoint.sh`）可能被 Git 或编辑器自动注入 `CRLF`（`\r\n`）行尾，在 Linux 容器中执行会直接引发 `/usr/local/bin/entrypoint.sh: line 2: $'\r': command not found` 致命崩溃。同步流程中必须强制转码为标准 `LF`。
+
+### 0.3 未验证假设与边界防御 (Speculation)
+- *[假设 1]*：iMac 配合机已在 macOS 系统设置中开启了「远程登录（SSH）」，且与 Windows 主开发机处于同一局域网内（或通过密钥完成 SSH 互信）。
+- *[假设 2]*：维护人员已在 iMac 终端完成 `docker login` 并具备目标 Docker Hub 命名空间的写权限（如 `reaticle` 组织）。
+
+---
+
+## 1 整体架构与全生命周期流水线拓扑
+
+```
++-------------------------------------------------------------------------------------------------------+
+| 阶段一：Windows 11 主开发机 (Pre-Build & Sync)                                                         |
+|                                                                                                       |
+|  [web/]                         [src/main/resources/static]            [target/wvp-pro-2.7.4.jar]     |
+|   Node.js 打包 (OpenSSL 3兼容) ====> 前端静态资源写入目录 ===============> Maven 生产打包 (跳过单元测试)       |
+|                                                                                    ||                 |
+|                                [scripts/sync-to-imac.ps1]                          ||                 |
+|  - 资产收集: jar + docker/aio/ + init.sql + LF换行净化 =============================+                 |
+|  - 传输协议: SCP / SFTP / Rsync over OpenSSH                                                          |
++---------------------------------------------------+---------------------------------------------------+
+                                                    |
+                                       局域网网络传输 (LAN SSH)
+                                                    |
+                                                    v
++---------------------------------------------------+---------------------------------------------------+
+| 阶段二：iMac 26.1 配合机 (Multi-Arch Build & Hub Publish)                                             |
+|                                                                                                       |
+|  工作目录: ~/wvp-aio-build/                                                                            |
+|   ├── wvp.jar (来自 Windows)                                                                          |
+|   ├── init.sql (来自 Windows)                                                                         |
+|   └── docker/aio/ (来自 Windows)                                                                      |
+|                                                                                                       |
+|  [Colima Docker Daemon + Buildx: aio-builder]                                                         |
+|   ├── Stage 1: jre-builder    (--platform=$TARGETPLATFORM) -> jlink 定制裁剪 ~48MB JRE                 |
+|   ├── Stage 2: zlm-builder    (--platform=$TARGETPLATFORM) -> 编译 ZLMediaKit (WebRTC+SRTP) & strip   |
+|   └── Stage 3: final-runner   (--platform=$TARGETPLATFORM) -> Alpine 3.20 + MariaDB + Redis + WVP     |
+|                                                                                                       |
+|  [Docker Hub 发布]                                                                                     |
+|   └── docker buildx build --platform linux/amd64,linux/arm64 --push -t reaticle/wvp-pro-aio:2.7.4    |
++-------------------------------------------------------------------------------------------------------+
+```
+
+---
+
+## 2 Windows 主开发机前置编译全流程
+
+在 Windows 11 主机上，所有编译操作均通过 PowerShell（pwsh）完成。
+
+### 2.1 依赖环境快速核验证
+
+在项目根目录打开 PowerShell 终端，执行版本探测：
+
+```powershell
+# 1. 验证 JDK 21
+java -version
+# 预期输出: openjdk version "21.x.x"
+
+# 2. 验证 Maven
+mvn -version
+# 预期输出: Apache Maven 3.8+ 及 Java version: 21
+
+# 3. 验证 Node.js
+node -v
+# 预期输出: v18.x.x 或 v20.x.x 或更高
+```
+
+### 2.2 步骤一：编译 Vue Web 前端静态资源
+
+由于 Node 17+ 默认切换为 OpenSSL 3.0，而 Vue CLI 4（Webpack 4）依赖 MD4 算法，必须注入环境变量后执行生产构建：
+
+```powershell
+# 1. 进入 web 目录
+cd web
+
+# 2. 注入 OpenSSL 3.0 兼容选项
+$env:NODE_OPTIONS="--openssl-legacy-provider"
+
+# 3. 执行生产构建
+npm run build:prod
+
+# 4. 验证产物归位
+Test-Path ..\src\main\resources\static\index.html
+# 输出为 True 即代表静态文件已正确写入 Spring Boot 资源目录
+```
+
+### 2.3 步骤二：打包 Spring Boot 后端可执行 Jar
+
+返回仓库根目录，通过 Maven 执行生产构建，跳过测试用例以提升速度：
+
+```powershell
+# 1. 回到项目根目录
+cd ..
+
+# 2. 执行打包
+mvn clean package -DskipTests
+
+# 3. 检查并验证产物
+Get-Item .\target\wvp-pro-2.7.4.jar | Select-Object Name, Length, LastWriteTime
+# 预期生成大小约为 60MB~80MB 的独立 Spring Boot 可执行 Jar 包
+```
+
+---
+
+## 3 双机资产同步实施方案与 Windows 自动化脚本
+
+### 3.1 同步文件清单精确矩阵
+
+| 序号 | 资产类别 | Windows 源路径 | iMac 远程目标路径 | 传输处理原则 |
+|---|---|---|---|---|
+| 1 | **后端核心可执行包** | `target/wvp-pro-2.7.4.jar` | `~/wvp-aio-build/wvp.jar` | 传输并标准化命名为 `wvp.jar` |
+| 2 | **Docker 构建资产集** | `docker/aio/` | `~/wvp-aio-build/docker/aio/` | 包含 Dockerfile、entrypoint.sh、配置模板 |
+| 3 | **数据库初始化脚本** | `数据库/2.7.4/初始化-mysql-2.7.4.sql` | `~/wvp-aio-build/init.sql` | 传输并标准化命名为 `init.sql` |
+| 4 | **换行符净化动作** | `docker/aio/entrypoint.sh` | 同上 | **强制将 CRLF 转为 LF**，避免 Linux 解释器崩溃 |
+
+> [!CAUTION]
+> **绝对禁止同步的目录与文件清单：**
+> - `.git/`（版本库历史，通常超过 100MB+）
+> - `web/node_modules/`（数万个零散小文件，极度降低 SCP/Rsync 性能）
+> - `target/classes/`、`target/generated-sources/`（中间编译产物）
+> - `.idea/`、`.vscode/`、本地运行日志 `logs/`
+
+### 3.2 iMac 配合机 SSH 接收端配置（一次性准备）
+
+在 iMac 配合机上执行一次性设置：
+1. 打开 **系统设置 -> 通用 -> 共享 -> 启用「远程登录 (Remote Login)」**；
+2. 允许当前用户访问（假设 macOS 用户名为 `reaticle`）；
+3. 获取 iMac 局域网 IP 地址：
+   ```bash
+   ipconfig getifaddr en0
+   # 假定输出为: 192.168.1.50
+   ```
+4. （可选推荐）在 Windows 11 PowerShell 中配置免密登录：
+   ```powershell
+   # 若未生成过密钥，执行: ssh-keygen -t ed25519
+   # 将公钥推送至 iMac（Windows 自带 ssh-copy-id 或手动写入）:
+   type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh reaticle@192.168.1.50 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+   ```
+
+### 3.3 编制 Windows 自动化同步脚本
+
+在 Windows 主开发机上，创建标准同步脚本 `scripts/sync-to-imac.ps1`：
+
+```powershell
+# scripts/sync-to-imac.ps1
+<#
+.SYNOPSIS
+    WVP All-in-One 镜像构建资产极速增量同步脚本 (Windows 11 -> iMac 配合机)
+.DESCRIPTION
+    1. 检查前端与后端打包产物完整性；
+    2. 自动化将 entrypoint.sh 换行符转换为 LF；
+    3. 通过 SCP / SSH 增量同步资产至 iMac 临时构建目录。
+.PARAMETER iMacHost
+    配合机 IP 地址，默认为 192.168.1.50
+.PARAMETER iMacUser
+    配合机 SSH 用户名，默认为 reaticle
+.PARAMETER RemoteDir
+    配合机远程工作空间，默认为 ~/wvp-aio-build
+#>
+
+[CmdletBinding()]
+param(
+    [string]$iMacHost = "192.168.1.50",
+    [string]$iMacUser = "reaticle",
+    [string]$RemoteDir = "~/wvp-aio-build",
+    [int]$Port = 22
+)
+
+$ErrorActionPreference = "Stop"
+
+# 1. 定位工程根目录
+$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+Set-Location $ProjectRoot
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "[Sync] WVP-PRO 资产同步流水线启动..." -ForegroundColor Cyan
+Write-Host "[Sync] 工程根路径: $ProjectRoot" -ForegroundColor Gray
+Write-Host "[Sync] 目标主机  : ${iMacUser}@${iMacHost}:${RemoteDir}" -ForegroundColor Gray
+Write-Host "============================================================" -ForegroundColor Cyan
+
+# 2. 前置构建产物检查
+$JarPath = Join-Path $ProjectRoot "target\wvp-pro-2.7.4.jar"
+if (-not (Test-Path $JarPath)) {
+    Write-Error "未找到打包产物: $JarPath，请先执行: mvn clean package -DskipTests"
+}
+
+$AioDir = Join-Path $ProjectRoot "docker\aio"
+if (-not (Test-Path $AioDir)) {
+    Write-Error "未找到构建资产目录: $AioDir"
+}
+
+$SqlPath = Join-Path $ProjectRoot "数据库\2.7.4\初始化-mysql-2.7.4.sql"
+if (-not (Test-Path $SqlPath)) {
+    Write-Error "未找到数据库初始化脚本: $SqlPath"
+}
+
+# 3. 规避 CRLF 换行符隐患 (强制转换为标准 LF)
+$EntrypointFile = Join-Path $AioDir "entrypoint.sh"
+if (Test-Path $EntrypointFile) {
+    Write-Host "[Sync] 正在对 entrypoint.sh 进行 LF 换行符净化..." -ForegroundColor Yellow
+    $Content = [System.IO.File]::ReadAllText($EntrypointFile)
+    $Content = $Content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($EntrypointFile, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+# 4. 在 iMac 端创建目标目录
+Write-Host "[Sync] 正在检查并初始化 iMac 远程目录..." -ForegroundColor Yellow
+$SshTarget = "${iMacUser}@${iMacHost}"
+ssh -p $Port $SshTarget "mkdir -p $RemoteDir/docker/aio"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "无法通过 SSH 连接至 iMac (${SshTarget})，请检查网络或 SSH 服务状态。"
+}
+
+# 5. 执行极速同步
+Write-Host "[Sync] 1/3 同步核心后端 Jar 包 (wvp.jar)..." -ForegroundColor Green
+scp -P $Port $JarPath "${SshTarget}:${RemoteDir}/wvp.jar"
+
+Write-Host "[Sync] 2/3 同步数据库初始化脚本 (init.sql)..." -ForegroundColor Green
+scp -P $Port $SqlPath "${SshTarget}:${RemoteDir}/init.sql"
+
+Write-Host "[Sync] 3/3 同步 Dockerfile 与编排资产 (docker/aio/)..." -ForegroundColor Green
+scp -P $Port -r "${AioDir}/*" "${SshTarget}:${RemoteDir}/docker/aio/"
+
+# 6. 赋予执行权限
+Write-Host "[Sync] 修正远程 Shell 脚本可执行权限..." -ForegroundColor Yellow
+ssh -p $Port $SshTarget "chmod +x $RemoteDir/docker/aio/*.sh 2>/dev/null || true"
+
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "[Sync] 同步全部完成！请登录 iMac 配合机执行镜像打包发布。" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+```
+
+### 3.4 执行同步
+
+在 Windows PowerShell 中运行：
+
+```powershell
+.\scripts\sync-to-imac.ps1 -iMacHost "192.168.1.50" -iMacUser "reaticle"
+```
+
+---
+
+## 4 iMac 配合机构建资产规划与核心实现
+
+为了确保 All-in-One 镜像在最小体积下稳定运行，以下全部构建资产统一组织并放置在 `docker/aio/` 目录下。
+
+### 4.1 核心资产目录结构规范
+
+```text
+docker/aio/
+├── Dockerfile                  # [核心 1] 多阶段跨平台极速加速构建文件
+├── entrypoint.sh               # [核心 2] 容器 PID 1 进程监督、配置自愈与优雅停机引擎
+├── build.sh                    # [核心 3] iMac 本地单键全自动多架构编译发布脚本
+└── conf/                       # 默认出厂配置模板
+    ├── application-aio.yml     # WVP 闭环配置模板
+    ├── zlm-config.ini          # ZLMediaKit WebRTC 与流媒体配置
+    └── redis-aio.conf          # Redis 轻量缓存配置
+```
+
+### 4.2 容器进程监督与优雅停机脚本 (`docker/aio/entrypoint.sh`)
+
+生产级容器编排中，必须解决 **MariaDB / ZLM 脏数据与异常崩溃** 问题。以下脚本严格拦截 `SIGTERM` / `SIGINT`，并在停机时依序优雅关闭：
+
+```bash
+#!/bin/sh
+# docker/aio/entrypoint.sh
+set -e
+
+echo "=========================================================="
+echo "  WVP-PRO All-in-One Container Supervision Engine v2.7.4  "
+echo "=========================================================="
+
+# -------------------------------------------------------------
+# 1. POSIX 信号拦截与级联逆序优雅退出逻辑
+# -------------------------------------------------------------
+stop_services() {
+    echo ""
+    echo "[Supervision] 收到容器停止信号 (SIGTERM/SIGINT)，执行逆序优雅停机..."
+    
+    # 步骤 1.1 停止 WVP-PRO (Java 业务层)
+    if [ -n "$WVP_PID" ] && kill -0 "$WVP_PID" 2>/dev/null; then
+        echo "[Shutdown] 1/4 正在停止 WVP-PRO 信令服务 (PID: $WVP_PID)..."
+        kill -TERM "$WVP_PID" 2>/dev/null
+        wait "$WVP_PID" 2>/dev/null || true
+        echo "[Shutdown] WVP-PRO 已安全退出。"
+    fi
+
+    # 步骤 1.2 停止 ZLMediaKit (流媒体层)
+    if [ -n "$ZLM_PID" ] && kill -0 "$ZLM_PID" 2>/dev/null; then
+        echo "[Shutdown] 2/4 正在停止 ZLMediaKit 流媒体引擎 (PID: $ZLM_PID)..."
+        kill -TERM "$ZLM_PID" 2>/dev/null
+        wait "$ZLM_PID" 2>/dev/null || true
+        echo "[Shutdown] ZLMediaKit 已安全退出。"
+    fi
+
+    # 步骤 1.3 停止 Redis
+    echo "[Shutdown] 3/4 正在停止 Redis 缓存服务..."
+    redis-cli -h 127.0.0.1 -p 6379 shutdown 2>/dev/null || true
+    echo "[Shutdown] Redis 已安全退出。"
+
+    # 步骤 1.4 安全刷新 MariaDB 脏页并停机 (防止 ibdata 损坏)
+    echo "[Shutdown] 4/4 正在执行 MariaDB 脏页刷盘与平滑停机..."
+    mysqladmin --socket=/run/mysqld/mysqld.sock shutdown 2>/dev/null || true
+    echo "[Shutdown] MariaDB 已安全退出。"
+
+    echo "[Supervision] 全组件优雅退出完毕，容器安全终止。"
+    exit 0
+}
+
+# 注册信号捕获
+trap stop_services SIGTERM SIGINT
+
+# -------------------------------------------------------------
+# 2. 外部映射配置自愈防御 (Config Self-Healing)
+# -------------------------------------------------------------
+mkdir -p /opt/wvp/config /opt/media/conf /opt/wvp/logs /opt/media/log /var/log/mysql /run/mysqld
+chown -R mysql:mysql /run/mysqld /var/log/mysql
+
+if [ ! -f /opt/wvp/config/application.yml ]; then
+    echo "[Self-Healing] 宿主未挂载 application.yml，自动注入出厂默认配置..."
+    cp /opt/wvp/templates/application-aio.yml /opt/wvp/config/application.yml
+fi
+
+if [ ! -f /opt/media/conf/config.ini ]; then
+    echo "[Self-Healing] 宿主未挂载 config.ini，自动注入出厂 ZLM 默认配置..."
+    cp /opt/wvp/templates/zlm-config.ini /opt/media/conf/config.ini
+fi
+
+if [ ! -f /etc/redis.conf ]; then
+    echo "[Self-Healing] 宿主未挂载 redis.conf，自动注入出厂 Redis 配置..."
+    cp /opt/wvp/templates/redis-aio.conf /etc/redis.conf
+fi
+
+# -------------------------------------------------------------
+# 3. MariaDB 存储初始化与表名大小写合规建表
+# -------------------------------------------------------------
+if [ ! -d "/var/lib/mysql/mysql" ]; then
+    echo "[DB-Init] 检测到数据目录为空，执行 MariaDB 首次初始化 (--lower-case-table-names=1)..."
+    chown -R mysql:mysql /var/lib/mysql
+    mysql_install_db --user=mysql --datadir=/var/lib/mysql --lower-case-table-names=1 >/dev/null 2>&1
+
+    echo "[DB-Init] 启动临时 mysqld 灌入初始化库表结构 (init.sql)..."
+    /usr/bin/mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap --lower-case-table-names=1 <<EOF
+FLUSH PRIVILEGES;
+CREATE DATABASE IF NOT EXISTS \`wvp\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('');
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED VIA mysql_native_password USING PASSWORD('');
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
+USE \`wvp\`;
+SOURCE /opt/wvp/init.sql;
+FLUSH PRIVILEGES;
+EOF
+    echo "[DB-Init] 数据库初始化完成并赋予本地无密直连权限。"
+fi
+
+# -------------------------------------------------------------
+# 4. 有序拉起各组件服务
+# -------------------------------------------------------------
+
+# 4.1 启动 Redis
+echo "[Startup] 1/4 启动 Redis 缓存引擎..."
+redis-server /etc/redis.conf --daemonize yes
+
+# 4.2 启动 MariaDB
+echo "[Startup] 2/4 启动 MariaDB 数据库引擎..."
+/usr/bin/mysqld_safe --user=mysql --datadir=/var/lib/mysql --lower-case-table-names=1 \
+    --socket=/run/mysqld/mysqld.sock --log-error=/var/log/mysql/error.log >/dev/null 2>&1 &
+
+# 等待 MariaDB 套接字就绪 (最多等待 20 秒)
+WAIT_COUNT=0
+until mysqladmin --socket=/run/mysqld/mysqld.sock ping --silent >/dev/null 2>&1 || [ $WAIT_COUNT -ge 20 ]; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+done
+if [ $WAIT_COUNT -ge 20 ]; then
+    echo "[Error] MariaDB 启动超时，请检查 /var/log/mysql/error.log"
+    exit 1
+fi
+echo "[Startup] MariaDB 就绪。"
+
+# 4.3 启动 ZLMediaKit
+echo "[Startup] 3/4 启动 ZLMediaKit 流媒体引擎..."
+/opt/media/bin/MediaServer -c /opt/media/conf/config.ini -d &
+ZLM_PID=$!
+
+# 等待 ZLM HTTP 端口可用
+sleep 2
+
+# 4.4 启动 WVP-PRO
+echo "[Startup] 4/4 启动 WVP-PRO 国标信令平台..."
+/opt/java-runtime/bin/java \
+    -Djava.security.egd=file:/dev/./urandom \
+    -Xms256m \
+    -Xmx512m \
+    -XX:+UseG1GC \
+    -jar /opt/wvp/wvp.jar \
+    --spring.config.location=/opt/wvp/config/application.yml &
+WVP_PID=$!
+
+echo "=========================================================="
+echo "  WVP-PRO All-in-One 全套组件启动就绪！                     "
+echo "  - Web 控制台 : http://<Host-IP>:18080                   "
+echo "  - SIP 国标端口: 8116 (UDP/TCP)                           "
+echo "  - WebRTC 对讲: 8000 (UDP)                               "
+echo "=========================================================="
+
+# -------------------------------------------------------------
+# 5. 常驻阻塞主进程，守护等待 WVP 退出
+# -------------------------------------------------------------
+wait "$WVP_PID"
+```
+
+### 4.3 闭环配置文件模板
+
+#### 1. WVP 核心闭环配置 (`docker/aio/conf/application-aio.yml`)
+```yaml
+# docker/aio/conf/application-aio.yml
+server:
+  port: 18080
+
+spring:
+  application:
+    name: wvp-pro-aio
+  profiles:
+    active: aio
+  data:
+    redis:
+      # 闭环直连本容器内置 Redis
+      host: 127.0.0.1
+      port: 6379
+      password: ""
+      database: 0
+  datasource:
+    # 闭环直连本容器内置 MariaDB
+    url: jdbc:mysql://127.0.0.1:3306/wvp?useUnicode=true&characterEncoding=UTF8&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true&allowPublicKeyRetrieval=true
+    username: root
+    password: ""
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+sip:
+  # 容器暴露的 SIP 国标信令接入端口
+  port: 8116
+  # 若容器运行在 Bridge 模式下，推流摄像头需填写宿主机外部 IP；宿主机外部 IP 也可在启动时通过环境变量覆盖
+  ip: 0.0.0.0
+  id: 41010500002000000001
+  domain: 4101050000
+  password: admin
+
+media:
+  id: zlmediakit-aio
+  # 容器内部闭环通信：WVP -> ZLM
+  ip: 127.0.0.1
+  http-port: 9092
+  # 容器内部闭环通信：ZLM -> WVP (绝无外部防火墙阻断问题)
+  hook-ip: 127.0.0.1
+  secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
+  auto-config: true
+
+logging:
+  file:
+    path: /opt/wvp/logs
+  level:
+    root: INFO
+    com.genersoft.wvp: INFO
+```
+
+#### 2. ZLMediaKit 配置模板 (`docker/aio/conf/zlm-config.ini`)
+```ini
+# docker/aio/conf/zlm-config.ini
+[api]
+apiDebug=0
+secret=035c73f7-bb6b-4889-a715-d9eb2d1925cc
+snapRoot=./www/snap/
+defaultSnap=./www/logo.png
+
+[general]
+mediaServerId=zlmediakit-aio
+enableVhost=0
+
+[http]
+port=9092
+sslport=9443
+rootPath=./www
+
+[rtc]
+# WebRTC 媒体与对讲端口 (必须暴露 UDP 8000)
+port=8000
+tcpPort=8000
+
+[rtp_proxy]
+# 国标 RTP 收流端口池
+port=10000
+port_range=30000-30050
+
+[hook]
+enable=1
+on_flow_report=http://127.0.0.1:18080/index/hook/on_flow_report
+on_http_access=http://127.0.0.1:18080/index/hook/on_http_access
+on_play=http://127.0.0.1:18080/index/hook/on_play
+on_publish=http://127.0.0.1:18080/index/hook/on_publish
+on_record_mp4=http://127.0.0.1:18080/index/hook/on_record_mp4
+on_record_ts=http://127.0.0.1:18080/index/hook/on_record_ts
+on_rtsp_auth=http://127.0.0.1:18080/index/hook/on_rtsp_auth
+on_rtsp_realm=http://127.0.0.1:18080/index/hook/on_rtsp_realm
+on_shell_login=http://127.0.0.1:18080/index/hook/on_shell_login
+on_stream_changed=http://127.0.0.1:18080/index/hook/on_stream_changed
+on_stream_none_reader=http://127.0.0.1:18080/index/hook/on_stream_none_reader
+on_stream_not_found=http://127.0.0.1:18080/index/hook/on_stream_not_found
+on_server_started=http://127.0.0.1:18080/index/hook/on_server_started
+on_server_keepalive=http://127.0.0.1:18080/index/hook/on_server_keepalive
+on_send_rtp_stopped=http://127.0.0.1:18080/index/hook/on_send_rtp_stopped
+```
+
+#### 3. Redis 轻量配置模板 (`docker/aio/conf/redis-aio.conf`)
+```ini
+# docker/aio/conf/redis-aio.conf
+bind 127.0.0.1
+protected-mode yes
+port 6379
+tcp-backlog 511
+timeout 0
+tcp-keepalive 300
+daemonize no
+pidfile /run/redis.pid
+loglevel notice
+logfile ""
+databases 16
+maxmemory 128mb
+maxmemory-policy allkeys-lru
+appendonly no
+save ""
+```
+
+### 4.4 多阶段跨平台极速加速构建 Dockerfile (`docker/aio/Dockerfile`)
+
+```dockerfile
+# docker/aio/Dockerfile
+
+# ==============================================================================
+# Stage 1: 基于目标平台生成微型定制 JRE (依赖 TARGETPLATFORM 保证指令集匹配)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM eclipse-temurin:21-jdk-alpine AS jre-builder
+
+RUN echo "[Stage 1] 正在针对目标架构执行 JRE 21 模块定制剥离 (jlink)..." && \
+    $JAVA_HOME/bin/jlink \
+    --add-modules java.base,java.compiler,java.desktop,java.instrument,java.management,java.naming,java.net.http,java.prefs,java.rmi,java.scripting,java.security.jgss,java.security.sasl,java.sql,java.sql.rowset,java.transaction.xa,java.xml,jdk.crypto.cryptoki,jdk.crypto.ec,jdk.unsupported,jdk.management \
+    --strip-debug \
+    --no-man-pages \
+    --no-header-files \
+    --compress=2 \
+    --output /opt/java-runtime
+
+# ==============================================================================
+# Stage 2: 目标架构编译 ZLMediaKit (针对 Alpine Linux musl libc 优化)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM alpine:3.20 AS zlm-builder
+
+RUN apk update && apk add --no-cache \
+    build-base \
+    cmake \
+    git \
+    linux-headers \
+    openssl-dev \
+    libsrtp-dev \
+    coreutils
+
+WORKDIR /build
+# 拉取 ZLMediaKit 核心源码并更新子模块
+RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
+    cd ZLMediaKit && git submodule update --init --recursive --depth 1
+
+WORKDIR /build/ZLMediaKit/build
+# 开启 WebRTC、关闭无用测试项、采用 Release 构建
+RUN cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_WEBRTC=ON \
+    -DENABLE_TESTS=OFF \
+    -DENABLE_API=ON \
+    -DENABLE_SERVER=ON && \
+    cmake --build . --target MediaServer -j$(nproc) && \
+    strip --strip-all /build/ZLMediaKit/release/linux/Release/MediaServer
+
+# ==============================================================================
+# Stage 3: 最终精简生产运行底座 (Alpine Linux 3.20)
+# ==============================================================================
+FROM --platform=$TARGETPLATFORM alpine:3.20 AS final-runner
+
+LABEL maintainer="reaticle <y.wang@reaticle.com>"
+LABEL description="WVP-PRO All-in-One: Java 21 + Vue UI + ZLM + MariaDB + Redis"
+
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8 \
+    JAVA_HOME=/opt/java-runtime \
+    PATH=/opt/java-runtime/bin:/opt/media/bin:$PATH
+
+# 1. 仅安装 Alpine 运行时依赖（剔除任何编译器）
+RUN apk update && apk add --no-cache \
+    bash \
+    curl \
+    tzdata \
+    ca-certificates \
+    mariadb \
+    mariadb-client \
+    redis \
+    libsrtp \
+    ffmpeg \
+    libstdc++ \
+    libgcc && \
+    cp /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone && \
+    rm -rf /var/cache/apk/* /var/lib/mysql/*
+
+# 2. 建立标准化目录布局
+RUN mkdir -p \
+    /opt/wvp/config \
+    /opt/wvp/templates \
+    /opt/wvp/logs \
+    /opt/media/bin \
+    /opt/media/conf \
+    /opt/media/bin/www/record \
+    /opt/media/log \
+    /var/lib/mysql \
+    /var/log/mysql \
+    /run/mysqld && \
+    chown -R mysql:mysql /var/lib/mysql /run/mysqld /var/log/mysql
+
+# 3. 装配组件产物
+# 3.1 拷入 JRE 21
+COPY --from=jre-builder /opt/java-runtime /opt/java-runtime
+# 3.2 拷入 ZLMediaKit 执行体与静态目录
+COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/MediaServer /opt/media/bin/MediaServer
+COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/default.pem /opt/media/bin/default.pem
+COPY --from=zlm-builder /build/ZLMediaKit/www/ /opt/media/bin/www/
+
+# 3.3 拷入 Windows 同步交付的业务产物
+COPY wvp.jar /opt/wvp/wvp.jar
+COPY init.sql /opt/wvp/init.sql
+
+# 3.4 拷入出厂配置模板与守护引擎
+COPY docker/aio/conf/application-aio.yml /opt/wvp/templates/application-aio.yml
+COPY docker/aio/conf/zlm-config.ini /opt/wvp/templates/zlm-config.ini
+COPY docker/aio/conf/redis-aio.conf /opt/wvp/templates/redis-aio.conf
+COPY docker/aio/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod +x /usr/local/bin/entrypoint.sh /opt/media/bin/MediaServer
+
+# 核心暴露端口声明
+EXPOSE 18080/tcp 8116/tcp 8116/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
+
+VOLUME ["/opt/wvp/config", "/opt/media/conf", "/var/lib/mysql", "/opt/media/bin/www/record", "/opt/wvp/logs"]
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+```
+
+---
+
+## 5 iMac 配合机多架构编译与 Docker Hub 发布实操
+
+登录进入 iMac 终端窗口，展开镜像编译与发布。
+
+### 5.1 步骤一：启动 Colima 容器守护进程
+
+为多架构构建分配充足的资源（建议 CPU $\ge$ 4 核，内存 $\ge$ 6GB，避免 C++ 编译触发 OOM 崩溃）：
+
+```bash
+# 启动 Colima
+colima start --cpu 4 --memory 6 --disk 50
+
+# 确认 Docker 客户端连接正常
+docker info
+```
+
+### 5.2 步骤二：准备 Docker Buildx 多架构构建器
+
+Docker 默认的构建实例无法跨平台输出多架构镜像列表，必须创建以 `docker-container` 为驱动的构建器：
+
+```bash
+# 1. 检查已有的 buildx 实例
+docker buildx ls
+
+# 2. 创建并切换至专用的 aio-builder 实例
+docker buildx create --name aio-builder --driver docker-container --use
+
+# 3. 初始化并拉取 QEMU 跨平台仿真器
+docker buildx inspect --bootstrap
+# 控制台输出中 Platforms 必须包含 linux/amd64 与 linux/arm64
+```
+
+### 5.3 步骤三：验证同步文件完整性
+
+进入同步接收工作空间：
+
+```bash
+cd ~/wvp-aio-build
+
+# 查看文件列表与权限
+ls -la
+# 必须包含: wvp.jar, init.sql, docker/
+ls -la docker/aio/
+# 必须包含: Dockerfile, entrypoint.sh, conf/
+```
+
+### 5.4 步骤四：本地单架构构建自测（冒烟测试）
+
+在全面构建双架构并推送到 Docker Hub 之前，推荐在 iMac 本机架构（如 `linux/arm64`）上先构建并本地加载运行：
+
+```bash
+# 1. 本地单架构构建（使用 --load 注入本地镜像列表）
+docker buildx build \
+    --platform linux/arm64 \
+    -t wvp-pro-aio:test \
+    -f docker/aio/Dockerfile \
+    --load .
+
+# 2. 检查本地镜像体积
+docker images | grep wvp-pro-aio
+# 验证 Virtual Size 是否低于 650MB
+
+# 3. 快速启动冒烟测试容器
+docker run -d --name wvp-test -p 18080:18080 -p 8116:8116/udp wvp-pro-aio:test
+
+# 4. 实时观察 entrypoint.sh 自愈日志与四组件健康状态
+docker logs -f wvp-test
+
+# 5. 验证完毕后清理测试容器
+docker stop wvp-test && docker rm wvp-test
+```
+
+### 5.5 步骤五：登录 Docker Hub 并执行全架构联合构建推送
+
+> [!IMPORTANT]
+> 多架构镜像（Multi-Arch Manifest List）底层无法在 Docker Daemon 单机存储引擎中直接合并共存，**必须通过 `--push` 参数直接编译并推送到远端注册库**。
+
+1. **登录 Docker Hub**：
+   ```bash
+   # 输入用户名与 Docker Hub Access Token (或密码)
+   docker login
+   ```
+
+2. **全自动编译并发布脚本 (`docker/aio/build.sh`)**：
+   在 `~/wvp-aio-build/docker/aio/build.sh` 中固化以下脚本，方便后续持续迭代发布：
+
+   ```bash
+   #!/bin/bash
+   # docker/aio/build.sh
+   set -e
+
+   # 基础参数配置
+   DOCKER_USER="reaticle"
+   IMAGE_NAME="wvp-pro-aio"
+   VERSION="2.7.4"
+   PLATFORMS="linux/amd64,linux/arm64"
+
+   cd "$(dirname "$0")/../.." || exit 1
+   echo "============================================================"
+   echo "  开始构建 WVP-PRO All-in-One 多架构镜像并推送到 Docker Hub  "
+   echo "  目标命名空间: ${DOCKER_USER}/${IMAGE_NAME}"
+   echo "  发布版本版本: ${VERSION} 及 latest"
+   echo "  目标指令集  : ${PLATFORMS}"
+   echo "============================================================"
+
+   # 激活构建器
+   docker buildx use aio-builder 2>/dev/null || docker buildx create --name aio-builder --use
+
+   # 执行多架构联合构建与远端推送
+   docker buildx build \
+       --platform "${PLATFORMS}" \
+       -t "${DOCKER_USER}/${IMAGE_NAME}:${VERSION}" \
+       -t "${DOCKER_USER}/${IMAGE_NAME}:latest" \
+       -f docker/aio/Dockerfile \
+       --push \
+       .
+
+   echo "============================================================"
+   echo "  镜像构建并推送成功！正在核验远端 Manifest List..."
+   echo "============================================================"
+   docker buildx imagetools inspect "${DOCKER_USER}/${IMAGE_NAME}:${VERSION}"
+   ```
+
+3. **执行发布**：
+   ```bash
+   chmod +x docker/aio/build.sh
+   ./docker/aio/build.sh
+   ```
+
+### 5.6 步骤六：Docker Hub 远端校验
+
+构建完成后，执行 `imagetools inspect` 查看 Hub 上的元数据：
+
+```bash
+docker buildx imagetools inspect reaticle/wvp-pro-aio:2.7.4
+```
+
+预期输出摘要：
+```text
+Name:      docker.io/reaticle/wvp-pro-aio:2.7.4
+MediaType: application/vnd.docker.distribution.manifest.list.v2+json
+Signatures: none
+
+Manifests:
+  Platform:   linux/amd64
+  MediaType:  application/vnd.docker.distribution.manifest.v2+json
+  Size:       ...
+  Digest:     sha256:4a7b...
+
+  Platform:   linux/arm64
+  MediaType:  application/vnd.docker.distribution.manifest.v2+json
+  Size:       ...
+  Digest:     sha256:9c1d...
+```
+
+---
+
+## 6 常见避坑指南与故障排查矩阵 (Troubleshooting)
+
+### 6.1 Windows 同步换行符导致容器 Entrypoint 崩溃
+- **现象**：容器启动即报 `/usr/local/bin/entrypoint.sh: line 2: $'\r': command not found`。
+- **根因**：Windows PowerShell / Git 默认可能以 CRLF 保存脚本。
+- **解法**：在 `scripts/sync-to-imac.ps1` 中已内置换行符过滤；若仍出现，可在 iMac 执行 `dos2unix docker/aio/entrypoint.sh` 或在 Dockerfile 中通过 `sed -i 's/\r$//' /usr/local/bin/entrypoint.sh` 防御。
+
+### 6.2 Colima 跨架构 C++ 编译 OOM 崩溃
+- **现象**：构建 `zlm-builder` 阶段执行 `cmake --build .` 时抛出 `g++: fatal error: Killed signal terminated program cc1plus`。
+- **根因**：Colima 虚拟机默认内存仅 2GB，并发多核编译消耗耗尽内存。
+- **解法**：启动 Colima 时显式分配 6GB 以上内存：`colima start --cpu 4 --memory 6`。
+
+### 6.3 MariaDB 表名大小写敏感导致 MyBatis 报错
+- **现象**：容器运行正常，但访问 Web 页面提示 `Table 'wvp.WVP_DEVICE' doesn't exist`。
+- **根因**：Linux 下 MariaDB 默认大小写敏感（`lower_case_table_names=0`），而建表脚本或代码映射混用了大小写。
+- **解法**：在首次 `mysql_install_db` 和 `mysqld --bootstrap` 初始化阶段，**必须强制指定 `--lower-case-table-names=1`**。一旦数据目录生成后，不可随意切换，否则库表字典损坏。
+
+### 6.4 WebRTC 对讲声音无法建立连接
+- **现象**：视频播放正常，但点击对讲无法听到声音，对讲状态处于协商中。
+- **根因**：WebRTC 依赖 UDP 8000 端口，且部分浏览器安全策略禁止在非 HTTPS（除 `localhost` 外）环境下打开麦克风。
+- **解法**：
+  1. 确保 Docker 运行参数或 Compose 模板中暴露了 `8000:8000/udp`；
+  2. 远端客户端访问需通过 HTTPS 反向代理，或在 Chrome 访问 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` 将 `http://<Host-IP>:18080` 加入白名单以授权采集麦克风。
+
+---
+
+## 7 交付验证检查表 (Verification Checklist)
+
+| 阶段 | 序号 | 检查项 | 验证命令 / 判据 | 状态 |
+|---|---|---|---|---|
+| **Windows 前置** | 1 | 前端编译产物归位 | `Test-Path .\src\main\resources\static\index.html` 必须为 True | [ ] |
+| | 2 | 后端 Jar 成功生成 | `target\wvp-pro-2.7.4.jar` 大小在 60MB~80MB 之间 | [ ] |
+| **双机同步** | 3 | SSH 免密与文件推送 | `.\scripts\sync-to-imac.ps1` 执行无退出码异常 | [ ] |
+| | 4 | 脚本换行符净化 | iMac 执行 `file ~/wvp-aio-build/docker/aio/entrypoint.sh` 显示 `ASCII text, with LF line terminators` | [ ] |
+| **iMac 构建** | 5 | Buildx 实例处于活动状态 | `docker buildx ls` 显示 `aio-builder *` | [ ] |
+| | 6 | 本地单架构冒烟成功 | `docker run` 容器后，四服务端口在 20 秒内全部绿灯就绪 | [ ] |
+| **Hub 发布** | 7 | 多架构联合推送完毕 | `docker buildx build --push` 返回成功 | [ ] |
+| | 8 | 远端 Manifest 包含双架构 | `imagetools inspect` 同时包含 `linux/amd64` 与 `linux/arm64` | [ ] |
+| | 9 | 镜像体积达标 | Docker Hub Compressed Download Size $\le$ 280MB | [ ] |
