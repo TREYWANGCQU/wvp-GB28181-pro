@@ -145,6 +145,12 @@ export const constantRoutes = [
         name: 'Proxy',
         component: () => import('@/views/streamProxy/index'),
         meta: { title: '拉流代理', icon: 'streamProxy' }
+      },
+      {
+        path: '/onvif',
+        name: 'OnvifDevice',
+        component: () => import('@/views/onvif/index'),
+        meta: { title: 'ONVIF设备', icon: 'nested' }
       }
     ]
   },

@@ -16,7 +16,7 @@
 3. **前端 Element-UI 交互视图**：
    - 设备主台账管理视图 `web/src/views/onvif/index.vue`（支持展开行查看 Profile 通道、在线状态标示、直接调用点播播放器）；
    - 局域网一键探测向导 `web/src/views/onvif/deviceDiscovery.vue`（UDP 多播一键扫描、厂商识别、批量勾选并纳管）；
-   - 八向云台操控盘组件 `web/src/views/onvif/ptzController.vue`（鼠标按下即走、松手即停，变倍缩放与预置位快速调用）。
+   - 八向云台操控盘组件 `web/src/views/onvif/ptzController.vue` （鼠标按下即走、松手即停，变倍缩放与预置位快速调用）。
 
 ---
 
