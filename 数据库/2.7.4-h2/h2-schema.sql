@@ -435,3 +435,49 @@ create table IF NOT EXISTS wvp_record_plan_item
     create_time     character varying(50),
     update_time     character varying(50)
 );
+
+create table IF NOT EXISTS wvp_onvif_device
+(
+    id                     serial primary key,
+    name                   character varying(255) not null,
+    ip                     character varying(50) not null,
+    port                   integer default 80 not null,
+    username               character varying(100) not null,
+    password               character varying(100) not null,
+    device_service_url     character varying(255) not null,
+    media_service_url      character varying(255),
+    ptz_service_url        character varying(255),
+    imaging_service_url    character varying(255),
+    manufacturer           character varying(100),
+    model                  character varying(100),
+    firmware_version       character varying(100),
+    serial_number          character varying(100),
+    mac                    character varying(50),
+    clock_offset           bigint default 0,
+    status                 smallint default 1,
+    media_server_id        character varying(50) default 'auto',
+    create_time            character varying(50),
+    update_time            character varying(50),
+    constraint uk_onvif_ip_port unique (ip, port)
+);
+
+create table IF NOT EXISTS wvp_onvif_channel
+(
+    id                     serial primary key,
+    device_id              integer not null,
+    channel_index          integer default 1 not null,
+    profile_token          character varying(100) not null,
+    name                   character varying(255),
+    video_encoding         character varying(50),
+    resolution             character varying(50),
+    frame_rate             integer,
+    bitrate                integer,
+    rtsp_url               character varying(512),
+    snapshot_url           character varying(512),
+    has_ptz                smallint default 0,
+    gb_device_id           character varying(50),
+    create_time            character varying(50),
+    update_time            character varying(50),
+    constraint uk_onvif_dev_profile unique (device_id, profile_token)
+);
+

@@ -111,7 +111,9 @@ cd ~/wvp-infra
 ├── docker-compose.yml       # 统一编排文件
 ├── mysql/
 │   ├── conf.d/my.cnf        # MySQL 字符集、大小写敏感等定制配置
-│   └── initdb/init.sql      # 数据库初始化表结构脚本
+│   └── initdb/              # 数据库初始化表结构脚本目录
+│       ├── 01-init.sql      # 基础全量表结构 (初始化-mysql-2.7.4.sql)
+│       └── 02-onvif.sql     # ONVIF 增量表结构 (增量-onvif.sql)
 ├── redis/
 │   └── redis.conf           # Redis 端口、网络绑定与密码配置
 └── zlm/
@@ -129,7 +131,12 @@ lower_case_table_names=1
 default-time-zone=+08:00
 max_connections=1000
 ```
-将项目代码库中的建表脚本拷贝或软链接至 `mysql/initdb/init.sql`（对应项目中的 [数据库/2.7.4/初始化-mysql-2.7.4.sql](../../../数据库/2.7.4/初始化-mysql-2.7.4.sql)），容器首次创建时会自动执行建表与初始数据导入。
+
+将项目代码库中的全量建表与增量脚本拷贝或软链接至 `mysql/initdb/` 目录：
+- **基础全量表结构**：[数据库/2.7.4/初始化-mysql-2.7.4.sql](../../../数据库/2.7.4/初始化-mysql-2.7.4.sql)（命名为 `01-init.sql`）；
+- **ONVIF 增量表结构**：[数据库/2.7.4/增量-onvif.sql](../../../数据库/2.7.4/增量-onvif.sql)（命名为 `02-onvif.sql`）；
+
+容器首次创建时将按字典序自动执行建表与增量表初始化导入。
 
 #### 2. Redis 配置文件 (`redis/redis.conf`)
 ```ini
@@ -265,6 +272,9 @@ docker compose logs -f wvp-zlm
 
 # 4. 停止并释放容器（数据持久保存在 Docker Volume 中，不会丢失）
 docker compose down
+
+# 5. 若已有 MySQL 容器需要就地升级 ONVIF 增量表（无需销毁已有 mysql-data 数据卷）：
+docker exec -i wvp-mysql mysql -uroot -proot wvp < 数据库/2.7.4/增量-onvif.sql
 ```
 
 ### 3.6 双机跨机通信与 Webhook 回调避坑铁律
@@ -595,7 +605,7 @@ Windows 11 默认可能会将局域网识别为公用网络（Public），从而
 若处于出差或脱离局域网配合机环境，主开发机可切换为纯单机独立轻量模式：
 
 1. **轻量数据库（内置 H2 模式）**：
-   打开 [src/main/resources/application-dev.yml](../../../src/main/resources/application-dev.yml)，注释 MySQL 数据源配置，取消注释内置 H2 数据库段（脚本位于 `数据库/2.7.4-h2/`），即可免装 MySQL 独立启动。
+   打开 [src/main/resources/application-dev.yml](../../../src/main/resources/application-dev.yml)，注释 MySQL 数据源配置，取消注释内置 H2 数据库段（脚本位于 `数据库/2.7.4-h2/`，已内置 ONVIF 增量表结构支持），即可免装 MySQL 独立启动。
 2. **本地流媒体服务**：
    访问 ZLMediaKit [官方 Release](https://github.com/ZLMediaKit/ZLMediaKit/issues/483) 下载 Windows 预编译压缩包，解压后双击运行 `MediaServer.exe`（官方发布包已内置 WebRTC 模块），并将 `media.ip` 与 `media.hook-ip` 均改回 `127.0.0.1`。
 

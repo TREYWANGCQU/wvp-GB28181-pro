@@ -51,6 +51,9 @@ public class OnvifXmlParser {
 
     /** 提取摄像机 UTC 硬件时间戳 */
     public static Instant parseSystemDateTime(String xml) {
+        if (xml == null || xml.trim().isEmpty()) {
+            return Instant.now();
+        }
         try {
             Document doc = DocumentHelper.parseText(xml);
             Element utcDateTime = findElementIgnoreCase(doc.getRootElement(), "UTCDateTime");
@@ -85,6 +88,9 @@ public class OnvifXmlParser {
     /** 提取设备硬件信息 (Manufacturer, Model, FirmwareVersion, SerialNumber, HardwareId) */
     public static Map<String, String> parseDeviceInformation(String xml) {
         Map<String, String> info = new HashMap<>();
+        if (xml == null || xml.trim().isEmpty()) {
+            return info;
+        }
         try {
             Document doc = DocumentHelper.parseText(xml);
             Element root = doc.getRootElement();
@@ -107,6 +113,9 @@ public class OnvifXmlParser {
     /** 提取服务能力 URL (Media XAddr, PTZ XAddr, Imaging XAddr) */
     public static Map<String, String> parseCapabilities(String xml) {
         Map<String, String> services = new HashMap<>();
+        if (xml == null || xml.trim().isEmpty()) {
+            return services;
+        }
         try {
             Document doc = DocumentHelper.parseText(xml);
             Element root = doc.getRootElement();
@@ -142,6 +151,9 @@ public class OnvifXmlParser {
     /** 提取 Profile 列表信息 */
     public static List<Map<String, Object>> extractProfiles(String xml) {
         List<Map<String, Object>> profiles = new ArrayList<>();
+        if (xml == null || xml.trim().isEmpty()) {
+            return profiles;
+        }
         try {
             Document doc = DocumentHelper.parseText(xml);
             List<Element> profileElements = findElementsIgnoreCase(doc.getRootElement(), "Profiles");
@@ -161,6 +173,9 @@ public class OnvifXmlParser {
 
     /** 提取 RTSP Stream URI */
     public static String parseStreamUri(String xml) {
+        if (xml == null || xml.trim().isEmpty()) {
+            return null;
+        }
         try {
             Document doc = DocumentHelper.parseText(xml);
             Element uriElem = findElementIgnoreCase(doc.getRootElement(), "Uri");
