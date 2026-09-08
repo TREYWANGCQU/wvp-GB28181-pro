@@ -143,7 +143,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh /opt/media/bin/MediaServer
 
 # 核心暴露端口声明
-EXPOSE 18080/tcp 8116/tcp 8116/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
+EXPOSE 18080/tcp 8116/tcp 8116/udp 3702/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
 
 VOLUME ["/opt/wvp/config", "/opt/media/conf", "/var/lib/mysql", "/opt/media/bin/www/record", "/opt/wvp/logs"]
 

@@ -10,7 +10,7 @@
 3. **架构与系统依赖**：
    - 前端 Web（Vue CLI 4）与后端 Java 产物为平台无关资产（HTML/JS 静态文件与跨平台 JVM 字节码 Jar 包）。
    - 流媒体引擎 ZLMediaKit（C++20）与精简版 JRE 21（`jlink` 产物）具有高度 CPU 架构绑定性与 OS C 运行时（Alpine musl libc）绑定性，必须在目标系统架构下完成编译与模块剥离。
-4. **数据库初始化脚本位置**：基准初始化建表脚本为 [数据库/2.7.4/初始化-mysql-2.7.4.sql](../../数据库/2.7.4/初始化-mysql-2.7.4.sql)。
+4. **数据库初始化脚本位置**：基准初始化建表脚本为 [数据库/2.7.4/初始化-mysql-2.7.4.sql](../../数据库/2.7.4/初始化-mysql-2.7.4.sql)，ONVIF 协议增量建表脚本为 [数据库/2.7.4/增量-onvif.sql](../../数据库/2.7.4/增量-onvif.sql)（包含 `wvp_onvif_device` 与 `wvp_onvif_channel` 表）。两者在同步前必须合并，以生成完整的 `init.sql`。
 
 ### 0.2 工程研判 (Judgment)
 1. **双机职责分工最优解**：
@@ -132,7 +132,7 @@ Get-Item .\target\wvp-pro-2.7.4.jar | Select-Object Name, Length, LastWriteTime
 |---|---|---|---|---|
 | 1 | **后端核心可执行包** | `target/wvp-pro-2.7.4.jar` | `~/wvp-aio-build/wvp.jar` | 传输并标准化命名为 `wvp.jar` |
 | 2 | **Docker 构建资产集** | `docker/aio/` | `~/wvp-aio-build/docker/aio/` | 包含 Dockerfile、entrypoint.sh、配置模板 |
-| 3 | **数据库初始化脚本** | `数据库/2.7.4/初始化-mysql-2.7.4.sql` | `~/wvp-aio-build/init.sql` | 传输并标准化命名为 `init.sql` |
+| 3 | **数据库初始化脚本** | `数据库/2.7.4/初始化-mysql-2.7.4.sql`<br>+ `增量-onvif.sql` | `~/wvp-aio-build/init.sql` | 自动合并基础表与 ONVIF 增量表，标准化命名为 `init.sql` |
 | 4 | **换行符净化动作** | `docker/aio/entrypoint.sh` | 同上 | **强制将 CRLF 转为 LF**，避免 Linux 解释器崩溃 |
 
 > [!CAUTION]
@@ -210,10 +210,30 @@ if (-not (Test-Path $AioDir)) {
     Write-Error "未找到构建资产目录: $AioDir"
 }
 
-$SqlPath = Join-Path $ProjectRoot "数据库\2.7.4\初始化-mysql-2.7.4.sql"
-if (-not (Test-Path $SqlPath)) {
-    Write-Error "未找到数据库初始化脚本: $SqlPath"
+# 2.3 数据库脚本检查与 ONVIF 增量表结构智能合流
+$BaseSqlPath = Join-Path $ProjectRoot "数据库\2.7.4\初始化-mysql-2.7.4.sql"
+$OnvifSqlPath = Join-Path $ProjectRoot "数据库\2.7.4\增量-onvif.sql"
+
+if (-not (Test-Path $BaseSqlPath)) {
+    Write-Error "未找到数据库基础初始化脚本: $BaseSqlPath"
 }
+
+$TempSqlDir = Join-Path $ProjectRoot "target"
+if (-not (Test-Path $TempSqlDir)) {
+    New-Item -ItemType Directory -Path $TempSqlDir -Force | Out-Null
+}
+$CombinedSqlPath = Join-Path $TempSqlDir "init-combined.sql"
+
+$BaseSql = [System.IO.File]::ReadAllText($BaseSqlPath)
+if (Test-Path $OnvifSqlPath) {
+    Write-Host "[Sync] 检测到 ONVIF 协议增量表结构 (增量-onvif.sql)，正在自动合流..." -ForegroundColor Green
+    $OnvifSql = [System.IO.File]::ReadAllText($OnvifSqlPath)
+    $CombinedSql = $BaseSql + "`n`n-- ==================== ONVIF INCREMENTAL TABLES ====================`n`n" + $OnvifSql
+} else {
+    $CombinedSql = $BaseSql
+}
+[System.IO.File]::WriteAllText($CombinedSqlPath, $CombinedSql, [System.Text.UTF8Encoding]::new($false))
+$SqlPath = $CombinedSqlPath
 
 # 3. 规避 CRLF 换行符隐患 (强制转换为标准 LF)
 $EntrypointFile = Join-Path $AioDir "entrypoint.sh"
@@ -236,7 +256,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[Sync] 1/3 同步核心后端 Jar 包 (wvp.jar)..." -ForegroundColor Green
 scp -P $Port $JarPath "${SshTarget}:${RemoteDir}/wvp.jar"
 
-Write-Host "[Sync] 2/3 同步数据库初始化脚本 (init.sql)..." -ForegroundColor Green
+Write-Host "[Sync] 2/3 同步数据库初始化脚本 (基础表+ONVIF增量表合流至 init.sql)..." -ForegroundColor Green
 scp -P $Port $SqlPath "${SshTarget}:${RemoteDir}/init.sql"
 
 Write-Host "[Sync] 3/3 同步 Dockerfile 与编排资产 (docker/aio/)..." -ForegroundColor Green
@@ -423,6 +443,7 @@ echo "=========================================================="
 echo "  WVP-PRO All-in-One 全套组件启动就绪！                     "
 echo "  - Web 控制台 : http://<Host-IP>:18080                   "
 echo "  - SIP 国标端口: 8116 (UDP/TCP)                           "
+echo "  - ONVIF 搜寻 : 3702 (UDP)                               "
 echo "  - WebRTC 对讲: 8000 (UDP)                               "
 echo "=========================================================="
 
@@ -667,7 +688,7 @@ COPY docker/aio/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /opt/media/bin/MediaServer
 
 # 核心暴露端口声明
-EXPOSE 18080/tcp 8116/tcp 8116/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
+EXPOSE 18080/tcp 8116/tcp 8116/udp 3702/udp 9092/tcp 8000/udp 8000/tcp 1935/tcp 554/tcp 30000-30050/udp 30000-30050/tcp
 
 VOLUME ["/opt/wvp/config", "/opt/media/conf", "/var/lib/mysql", "/opt/media/bin/www/record", "/opt/wvp/logs"]
 
@@ -857,6 +878,13 @@ Manifests:
   1. 确保 Docker 运行参数或 Compose 模板中暴露了 `8000:8000/udp`；
   2. 远端客户端访问需通过 HTTPS 反向代理，或在 Chrome 访问 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` 将 `http://<Host-IP>:18080` 加入白名单以授权采集麦克风。
 
+### 6.5 Docker 容器内点击 ONVIF 设备搜寻无法找到局域网设备
+- **现象**：在 Web 页面点击“搜索设备”，进度条走完后列表为空，但局域网内确实存在正常在线的 ONVIF 摄像头。
+- **根因**：WS-Discovery 依赖发送至 `239.255.255.250:3702` 的 UDP 组播。Docker 默认 Bridge 桥接网络（如 `docker0`）会丢弃组播报文，使得摄像头无法接收到 Probe 探测或回包无法穿透网桥进入容器。
+- **解法**：
+  1. **生产环境（Linux 裸机）**：在 `docker-compose.yml` 中声明 `network_mode: host`，使容器共享宿主机物理网络栈，即可恢复组播发现；
+  2. **开发/跨平台环境（macOS / Windows Bridge 模式）**：受轻量级虚拟机网络限制无法使用 host 模式，此时请使用 Web 界面的“手动添加”功能，直接输入摄像机的实际 IP 与 ONVIF 端口（如 80/8080/8899）即可完成无缝接入。
+
 ---
 
 ## 7 交付验证检查表 (Verification Checklist)
@@ -865,10 +893,11 @@ Manifests:
 |---|---|---|---|---|
 | **Windows 前置** | 1 | 前端编译产物归位 | `Test-Path .\src\main\resources\static\index.html` 必须为 True | [ ] |
 | | 2 | 后端 Jar 成功生成 | `target\wvp-pro-2.7.4.jar` 大小在 60MB~80MB 之间 | [ ] |
-| **双机同步** | 3 | SSH 免密与文件推送 | `.\scripts\sync-to-imac.ps1` 执行无退出码异常 | [ ] |
-| | 4 | 脚本换行符净化 | iMac 执行 `file ~/wvp-aio-build/docker/aio/entrypoint.sh` 显示 `ASCII text, with LF line terminators` | [ ] |
-| **iMac 构建** | 5 | Buildx 实例处于活动状态 | `docker buildx ls` 显示 `aio-builder *` | [ ] |
-| | 6 | 本地单架构冒烟成功 | `docker run` 容器后，四服务端口在 20 秒内全部绿灯就绪 | [ ] |
-| **Hub 发布** | 7 | 多架构联合推送完毕 | `docker buildx build --push` 返回成功 | [ ] |
-| | 8 | 远端 Manifest 包含双架构 | `imagetools inspect` 同时包含 `linux/amd64` 与 `linux/arm64` | [ ] |
-| | 9 | 镜像体积达标 | Docker Hub Compressed Download Size $\le$ 280MB | [ ] |
+| | 3 | 数据库合流产物生成 | `target\init-combined.sql` 包含 `wvp_onvif_device` 表结构 | [ ] |
+| **双机同步** | 4 | SSH 免密与文件推送 | `.\scripts\sync-to-imac.ps1` 执行无退出码异常 | [ ] |
+| | 5 | 脚本换行符净化 | iMac 执行 `file ~/wvp-aio-build/docker/aio/entrypoint.sh` 显示 `ASCII text, with LF line terminators` | [ ] |
+| **iMac 构建** | 6 | Buildx 实例处于活动状态 | `docker buildx ls` 显示 `aio-builder *` | [ ] |
+| | 7 | 本地单架构冒烟成功 | `docker run` 容器后，四服务端口及 3702/udp 在 20 秒内全部绿灯就绪 | [ ] |
+| **Hub 发布** | 8 | 多架构联合推送完毕 | `docker buildx build --push` 返回成功 | [ ] |
+| | 9 | 远端 Manifest 包含双架构 | `imagetools inspect` 同时包含 `linux/amd64` 与 `linux/arm64` | [ ] |
+| | 10 | 镜像体积达标 | Docker Hub Compressed Download Size $\le$ 280MB | [ ] |

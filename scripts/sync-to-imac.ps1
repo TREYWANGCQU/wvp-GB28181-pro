@@ -53,10 +53,30 @@ if (-not (Test-Path $AioDir)) {
     Write-Error "未找到构建资产目录: $AioDir"
 }
 
-$SqlPath = Join-Path $ProjectRoot "数据库\2.7.4\初始化-mysql-2.7.4.sql"
-if (-not (Test-Path $SqlPath)) {
-    Write-Error "未找到数据库初始化脚本: $SqlPath"
+# 2.3 数据库脚本检查与 ONVIF 增量表结构智能合流
+$BaseSqlPath = Join-Path $ProjectRoot "数据库\2.7.4\初始化-mysql-2.7.4.sql"
+$OnvifSqlPath = Join-Path $ProjectRoot "数据库\2.7.4\增量-onvif.sql"
+
+if (-not (Test-Path $BaseSqlPath)) {
+    Write-Error "未找到数据库基础初始化脚本: $BaseSqlPath"
 }
+
+$TempSqlDir = Join-Path $ProjectRoot "target"
+if (-not (Test-Path $TempSqlDir)) {
+    New-Item -ItemType Directory -Path $TempSqlDir -Force | Out-Null
+}
+$CombinedSqlPath = Join-Path $TempSqlDir "init-combined.sql"
+
+$BaseSql = [System.IO.File]::ReadAllText($BaseSqlPath)
+if (Test-Path $OnvifSqlPath) {
+    Write-Host "[Sync] 检测到 ONVIF 协议增量表结构 (增量-onvif.sql)，正在自动合流..." -ForegroundColor Green
+    $OnvifSql = [System.IO.File]::ReadAllText($OnvifSqlPath)
+    $CombinedSql = $BaseSql + "`n`n-- ==================== ONVIF INCREMENTAL TABLES ====================`n`n" + $OnvifSql
+} else {
+    $CombinedSql = $BaseSql
+}
+[System.IO.File]::WriteAllText($CombinedSqlPath, $CombinedSql, [System.Text.UTF8Encoding]::new($false))
+$SqlPath = $CombinedSqlPath
 
 # 3. 规避 CRLF 换行符隐患 (强制转换为标准 LF)
 $ShellFiles = Get-ChildItem -Path $AioDir -Filter "*.sh" -Recurse
