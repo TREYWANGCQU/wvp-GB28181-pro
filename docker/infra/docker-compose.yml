@@ -19,6 +19,8 @@ services:
       - ./mysql/conf.d:/etc/mysql/conf.d:ro
       - ./mysql/initdb:/docker-entrypoint-initdb.d:ro
       - mysql-data:/var/lib/mysql
+    command:
+      - --default-authentication-plugin=mysql_native_password
     networks:
       - wvp-net
 
@@ -43,6 +45,8 @@ services:
     image: zlmediakit/zlmediakit:master
     container_name: wvp-zlm
     restart: always
+    # 若在 Linux 测试机需极致性能或 WebRTC 穿透，可启用 network_mode: host 并注释 ports 和 networks
+    # network_mode: host
     ports:
       - "9092:80"                      # HTTP REST API & 流播放
       - "1935:1935"                    # RTMP

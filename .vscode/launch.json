@@ -1,0 +1,14 @@
+// .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug WVP-PRO (Dev)",
+            "request": "launch",
+            "mainClass": "com.genersoft.iot.vmp.VManageBootstrap",
+            "projectName": "wvp-pro",
+            "args": "--spring.profiles.active=dev"
+        }
+    ]
+}
