@@ -288,21 +288,29 @@ docker compose down
 
 ### 4.1 安装与验证 JDK 21 及 Maven
 
-若尚未安装 Java 21 与 Maven，推荐在 Windows 11 终端（PowerShell）中通过自带的 `winget` 快速完成安装：
+若尚未安装 Java 21 与 Maven，推荐在 Windows 11 终端（PowerShell）中按如下方式配置：
 
 ```powershell
-# 1. 采用 winget 一键安装 Eclipse Adoptium Temurin 21 JDK 与 Apache Maven
+# 1. 采用 winget 安装 Eclipse Adoptium Temurin 21 JDK
 winget install EclipseAdoptium.Temurin.21.JDK --accept-source-agreements --accept-package-agreements
-winget install Apache.Maven --accept-source-agreements --accept-package-agreements
 
-# 2. 重启终端以刷新系统环境变量，并验证版本
+# 2. 安装 Apache Maven（任选一种方案）
+# 方案 A（推荐）：若已安装 Chocolatey 包管理器，直接一键安装：
+choco install maven -y
+
+# 方案 B：官方绿色解压安装（无包管理器环境）
+# 1) 下载官方二进制包：https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.zip
+# 2) 解压至常用目录（如 D:\develop\apache-maven-3.9.9）
+# 3) 将其 bin 目录追加至系统环境变量 Path 中
+
+# 3. 重启终端以刷新系统环境变量，并验证版本
 java -version
 # 须输出 openjdk version "21.x.x"
 mvn -version
 # 须输出 Apache Maven 3.8+ 及 Java version 21
 ```
 
-*(若手动下载解压安装，请确保将 JDK 根路径设为系统变量 `JAVA_HOME`，并将 `%JAVA_HOME%\bin` 与 Maven `bin` 路径追加至系统 `Path`。)*
+*(若手动下载解压安装 JDK 或 Maven，请确保将 JDK 根路径设为系统变量 `JAVA_HOME`，并将 `%JAVA_HOME%\bin` 与 Maven 的 `bin` 路径追加至系统 `Path`。)*
 
 ### 4.2 Node.js 构建参数兼容（针对 Node >= 17）
 
