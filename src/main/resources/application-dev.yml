@@ -6,7 +6,7 @@ spring:
   data:
     redis:
       # 指向 192.168.30.x Linux 测试机的 Redis 容器 (或使用 SSH 映射填 127.0.0.1)
-      host: 192.168.30.100
+      host: 192.168.10.27
       port: 6379
       password: "" # 若容器未设密码可留空
   datasource:
@@ -27,7 +27,7 @@ sip:
 media:
   id: zlmediakit-local
   # 指向 192.168.30.x Linux 测试机上运行的 ZLM 局域网 IP
-  ip: 192.168.30.100
+  ip: 192.168.10.27
   http-port: 9092
   # [重点避坑] 明确通知 ZLM 回调 Windows 11 主开发机的 IP 地址
   hook-ip: 192.168.30.252

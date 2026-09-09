@@ -15,13 +15,13 @@
 ### 1. 配合机（iMac / 联网机）一键拉取与镜像打包导出
 在有外网条件的构建机上执行：
 ```bash
-# 联网拉取全套镜像
-docker pull mysql:8.0
-docker pull redis:7.0
-docker pull zlmediakit/zlmediakit:master
+# 联网拉取全套镜像（显式指定 linux/amd64 架构，避免 Apple Silicon Mac 默认拉取 arm64）
+docker pull --platform linux/amd64 mysql:8.0
+docker pull --platform linux/amd64 redis:7.0
+docker pull --platform linux/amd64 zlmediakit/zlmediakit:master
 
 # 合并打包并 gzip 压缩导出（约 500~600MB）
-docker save mysql:8.0 redis:7.0 zlmediakit/zlmediakit:master | gzip > wvp-infra-images.tar.gz
+docker save --platform linux/amd64 mysql:8.0 redis:7.0 zlmediakit/zlmediakit:master | gzip > wvp-infra-images.tar.gz
 ```
 *(或直接执行配套脚本 `./package-images.sh`)*
 

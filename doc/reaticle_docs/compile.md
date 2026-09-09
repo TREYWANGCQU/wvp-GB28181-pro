@@ -112,13 +112,13 @@ colima status
 # 2. 进入或创建本地基础设施目录
 mkdir -p ~/projects/wvp-infra && cd ~/projects/wvp-infra
 
-# 3. 联网拉取全量官方认证基础镜像
-docker pull mysql:8.0
-docker pull redis:7.0
-docker pull zlmediakit/zlmediakit:master
+# 3. 联网拉取全量官方认证基础镜像（显式指定测试机所需的 linux/amd64 架构，避免 Mac 默认拉取 arm64）
+docker pull --platform linux/amd64 mysql:8.0
+docker pull --platform linux/amd64 redis:7.0
+docker pull --platform linux/amd64 zlmediakit/zlmediakit:master
 
 # 4. 一键将三款镜像合并打包并进行 gzip 高压缩导出（约 500~600MB）
-docker save mysql:8.0 redis:7.0 zlmediakit/zlmediakit:master | gzip > wvp-infra-images.tar.gz
+docker save --platform linux/amd64 mysql:8.0 redis:7.0 zlmediakit/zlmediakit:master | gzip > wvp-infra-images.tar.gz
 
 # 5. 校验镜像包完整性与大小
 ls -lh wvp-infra-images.tar.gz
@@ -153,7 +153,7 @@ scp -r d:\offices\Github\wvp-GB28181-pro\docker\infra root@192.168.30.100:~/wvp-
 
 ```bash
 # 1. 离线载入 Docker 镜像
-docker load < /tmp/wvp-infra-images.tar.gz
+docker load -i /tmp/wvp-infra-images.tar.gz
 
 # 2. 确认镜像已成功注入本地 Docker 存储
 docker images | grep -E 'mysql|redis|zlmediakit'
