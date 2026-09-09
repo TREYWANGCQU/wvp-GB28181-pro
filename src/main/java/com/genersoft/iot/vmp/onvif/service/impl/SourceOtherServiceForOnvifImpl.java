@@ -5,6 +5,7 @@ import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.conf.UserSetting;
 import com.genersoft.iot.vmp.gb28181.bean.MobilePosition;
 import com.genersoft.iot.vmp.gb28181.service.ISourceOtherService;
+import com.genersoft.iot.vmp.media.bean.MediaInfo;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import lombok.RequiredArgsConstructor;
@@ -34,11 +35,18 @@ public class SourceOtherServiceForOnvifImpl implements ISourceOtherService {
 
         // 检查全局设置是否开启了无人观看按需拉流停流
         if (userSetting.getStreamOnDemand()) {
-            log.info("[ONVIF-Stream] 检测到无人观看，触发自动释放拉流代理: app={}, stream={}", app, stream);
             MediaServer mediaServer = mediaServerService.getOne(mediaServerId);
-            if (mediaServer != null) {
-                sourcePlayService.stopStream(mediaServer, app, stream);
+            if (mediaServer == null) {
+                return false;
             }
+            // 查询 ZLM 中该流的全局状态与总活跃读者数
+            MediaInfo mediaInfo = mediaServerService.getMediaInfo(mediaServer, app, stream);
+            if (mediaInfo != null && mediaInfo.getReaderCount() != null && mediaInfo.getReaderCount() > 0) {
+                // 仍有其它协议（如 ws-flv / rtc）观众正在观看，单协议切片（如 hls）无人观看时严禁关闭主代理
+                return false;
+            }
+            log.info("[ONVIF-Stream] 检测到所有协议均无活跃读者 (totalReaderCount=0)，释放拉流代理: app={}, stream={}", app, stream);
+            sourcePlayService.stopStream(mediaServer, app, stream);
             return true;
         }
         return false;

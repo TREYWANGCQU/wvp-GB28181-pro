@@ -11,10 +11,17 @@
     <div v-loading="loading" element-loading-text="正在上传并连接设备探测纳管中...">
       <div style="margin-bottom: 16px; font-size: 13px; color: #606266; line-height: 1.6;">
         请先下载标准导入模板，按照格式填写设备 IP、端口、鉴权凭据及可选的国标编码后拖拽上传。
-        <div style="margin-top: 8px;">
-          <el-button type="primary" size="mini" icon="el-icon-download" @click="handleDownloadTemplate">
+        <div style="margin-top: 8px; display: flex; align-items: center;">
+          <el-button type="primary" size="mini" icon="el-icon-download" :loading="downloading" @click="handleDownloadTemplate">
             下载导入模板 (.xlsx)
           </el-button>
+          <a
+            href="/static/file/ONVIF设备批量导入模板.xlsx"
+            download="ONVIF设备批量导入模板.xlsx"
+            style="color: #409EFF; font-size: 12px; margin-left: 14px; text-decoration: underline;"
+          >
+            直接下载静态备用模板
+          </a>
         </div>
       </div>
 
@@ -65,6 +72,7 @@
 <script>
 import elDragDialog from '@/directive/el-drag-dialog'
 import { importOnvifDevices } from '@/api/onvif'
+import { getToken } from '@/utils/auth'
 
 export default {
   name: 'ImportDevice',
@@ -78,6 +86,7 @@ export default {
   data() {
     return {
       loading: false,
+      downloading: false,
       result: null
     }
   },
@@ -93,7 +102,49 @@ export default {
   },
   methods: {
     handleDownloadTemplate() {
-      window.open('/api/onvif/device/import/template', '_blank')
+      this.downloading = true
+      const token = getToken()
+      const baseUrl = (process.env.NODE_ENV === 'development') ? (process.env.VUE_APP_BASE_API || '') : (window.baseUrl || '')
+      const fileUrl = baseUrl + '/api/onvif/device/import/template'
+      const headers = new Headers()
+      if (token) {
+        headers.append('access-token', token)
+      }
+
+      fetch(fileUrl, {
+        method: 'GET',
+        headers: headers
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+          return response.blob()
+        })
+        .then(blob => {
+          const blobUrl = window.URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = blobUrl
+          link.download = 'ONVIF设备批量导入模板.xlsx'
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(blobUrl)
+          this.$message.success('模板下载成功')
+        })
+        .catch(err => {
+          console.warn('[ONVIF-Template] 动态下载失败，尝试静态备用地址:', err)
+          // 容灾 fallback 至静态备用文件
+          const staticLink = document.createElement('a')
+          staticLink.href = '/static/file/ONVIF设备批量导入模板.xlsx'
+          staticLink.download = 'ONVIF设备批量导入模板.xlsx'
+          document.body.appendChild(staticLink)
+          staticLink.click()
+          document.body.removeChild(staticLink)
+        })
+        .finally(() => {
+          this.downloading = false
+        })
     },
     handleUpload(param) {
       const file = param.file

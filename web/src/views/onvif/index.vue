@@ -73,9 +73,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="260" align="center">
+      <el-table-column label="操作" width="280" align="center">
         <template slot-scope="scope">
           <el-button size="mini" type="text" icon="el-icon-video-play" @click="handlePlayDevice(scope.row)">播放</el-button>
+          <el-button size="mini" type="text" icon="el-icon-edit" @click="handleEditDevice(scope.row)">编辑</el-button>
           <el-button size="mini" type="text" icon="el-icon-refresh" @click="handleSync(scope.row)">同步Profile</el-button>
           <el-button size="mini" type="text" style="color: #F56C6C;" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
         </template>
@@ -101,7 +102,7 @@
     <import-device v-if="importDialogVisible" :visible.sync="importDialogVisible" @success="fetchData" />
 
     <!-- 弹窗：手动添加设备 -->
-    <el-dialog title="接入 ONVIF 设备" :visible.sync="dialogAddVisible" width="500px">
+    <el-dialog title="接入 ONVIF 设备" :visible.sync="dialogAddVisible" width="500px" :close-on-click-modal="false">
       <el-form ref="dataForm" :model="tempDevice" :rules="rules" label-width="110px">
         <el-form-item label="设备名称" prop="name">
           <el-input v-model="tempDevice.name" placeholder="例: 办公室枪机" />
@@ -125,21 +126,50 @@
       </div>
     </el-dialog>
 
-    <!-- 抽屉：编辑通道国标属性 -->
-    <el-drawer
+    <!-- 弹窗：编辑 ONVIF 设备基础信息 -->
+    <el-dialog title="编辑 ONVIF 设备" :visible.sync="dialogEditVisible" width="500px" :close-on-click-modal="false">
+      <el-form ref="editForm" :model="tempEditDevice" :rules="rules" label-width="110px">
+        <el-form-item label="设备名称" prop="name">
+          <el-input v-model="tempEditDevice.name" placeholder="例: 办公室枪机" />
+        </el-form-item>
+        <el-form-item label="IP 地址" prop="ip">
+          <el-input v-model="tempEditDevice.ip" placeholder="192.168.1.108" />
+        </el-form-item>
+        <el-form-item label="服务端口" prop="port">
+          <el-input-number v-model="tempEditDevice.port" :min="1" :max="65535" />
+        </el-form-item>
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="tempEditDevice.username" placeholder="admin" />
+        </el-form-item>
+        <el-form-item label="认证密码" prop="password">
+          <el-input v-model="tempEditDevice.password" type="password" show-password placeholder="若密码未变可保留原值" />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button @click="dialogEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editSubmitLoading" @click="submitEditDevice">保存</el-button>
+      </div>
+    </el-dialog>
+
+    <!-- 弹窗：编辑通道国标属性 (方案A：90%宽屏对话框，完整展开三列布局) -->
+    <el-dialog
       title="编辑通道国标属性"
-      :visible.sync="editChannelDrawerVisible"
-      size="700px"
+      :visible.sync="editChannelDialogVisible"
+      width="90%"
+      top="3vh"
+      :close-on-click-modal="false"
       :destroy-on-close="true"
+      :append-to-body="true"
     >
       <common-channel-edit
-        v-if="editChannelDrawerVisible"
+        v-if="editChannelDialogVisible"
         :id="currentEditingGbId"
         :show-cancel="true"
+        style="height: 72vh; overflow: auto !important;"
         @submitSuccess="handleChannelEditSuccess"
-        @cancel="editChannelDrawerVisible = false"
+        @cancel="editChannelDialogVisible = false"
       />
-    </el-drawer>
+    </el-dialog>
 
     <!-- 通用弹窗播放器 (含同屏PTZ云台控制器) -->
     <channel-player ref="devicePlayer" />
@@ -147,7 +177,7 @@
 </template>
 
 <script>
-import { getOnvifDeviceList, addOnvifDevice, deleteOnvifDevice, syncOnvifChannels, getOnvifChannels } from '@/api/onvif'
+import { getOnvifDeviceList, addOnvifDevice, updateOnvifDevice, deleteOnvifDevice, syncOnvifChannels, getOnvifChannels } from '@/api/onvif'
 import DeviceDiscovery from './deviceDiscovery.vue'
 import ImportDevice from './dialog/importDevice.vue'
 import ChannelPlayer from '@/views/channel/player.vue'
@@ -165,16 +195,19 @@ export default {
     return {
       listLoading: false,
       submitLoading: false,
+      editSubmitLoading: false,
       deviceList: [],
       total: 0,
       listQuery: { page: 1, count: 10, query: '', status: null },
       dialogAddVisible: false,
+      dialogEditVisible: false,
       discoveryVisible: false,
       importDialogVisible: false,
-      editChannelDrawerVisible: false,
+      editChannelDialogVisible: false,
       currentEditingGbId: null,
       currentEditingDeviceId: null,
       tempDevice: { name: '', ip: '', port: 80, username: 'admin', password: '' },
+      tempEditDevice: { id: null, name: '', ip: '', port: 80, username: '', password: '', mediaServerId: '' },
       rules: {
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
         ip: [{ required: true, message: '请输入 IP 地址', trigger: 'blur' }],
@@ -217,6 +250,33 @@ export default {
             this.submitLoading = false
             this.fetchData()
           }).catch(() => { this.submitLoading = false })
+        }
+      })
+    },
+    handleEditDevice(row) {
+      this.tempEditDevice = {
+        id: row.id,
+        name: row.name,
+        ip: row.ip,
+        port: row.port,
+        username: row.username,
+        password: row.password,
+        mediaServerId: row.mediaServerId
+      }
+      this.dialogEditVisible = true
+    },
+    submitEditDevice() {
+      this.$refs.editForm.validate(valid => {
+        if (valid) {
+          this.editSubmitLoading = true
+          updateOnvifDevice(this.tempEditDevice).then(() => {
+            this.$message.success('设备基础信息修改成功')
+            this.dialogEditVisible = false
+            this.editSubmitLoading = false
+            this.fetchData()
+          }).catch(() => {
+            this.editSubmitLoading = false
+          })
         }
       })
     },
@@ -283,10 +343,10 @@ export default {
       }
       this.currentEditingGbId = channel.gbId
       this.currentEditingDeviceId = channel.deviceId
-      this.editChannelDrawerVisible = true
+      this.editChannelDialogVisible = true
     },
     handleChannelEditSuccess() {
-      this.editChannelDrawerVisible = false
+      this.editChannelDialogVisible = false
       if (this.currentEditingDeviceId) {
         getOnvifChannels(this.currentEditingDeviceId).then(res => {
           const dev = this.deviceList.find(d => d.id === this.currentEditingDeviceId)
