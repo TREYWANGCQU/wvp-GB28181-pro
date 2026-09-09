@@ -51,8 +51,10 @@
           <el-button v-if="hasShare ==='true'" size="mini" type="danger" :loading="removeLoading" @click="remove()">
             移除
           </el-button>
-          <el-button v-if="hasShare !=='true'" size="mini" :loading="addByDeviceLoading" @click="addByDevice()">按设备添加</el-button>
-          <el-button v-if="hasShare ==='true'" size="mini" :loading="removeByDeviceLoading" @click="removeByDevice()">按设备移除</el-button>
+          <el-button v-if="hasShare !=='true'" size="mini" :loading="addByDeviceLoading" @click="addByDevice()">按国标设备添加</el-button>
+          <el-button v-if="hasShare !=='true'" size="mini" :loading="addByOnvifDeviceLoading" @click="addByOnvifDevice()">按ONVIF设备添加</el-button>
+          <el-button v-if="hasShare ==='true'" size="mini" :loading="removeByDeviceLoading" @click="removeByDevice()">按国标设备移除</el-button>
+          <el-button v-if="hasShare ==='true'" size="mini" :loading="removeByOnvifDeviceLoading" @click="removeByOnvifDevice()">按ONVIF设备移除</el-button>
           <el-button v-if="hasShare !=='true'" size="mini" :loading="addAllLoading" @click="addAll()">全部添加</el-button>
           <el-button v-if="hasShare ==='true'" size="mini" :loading="removeAllLoading" @click="removeAll()">全部移除</el-button>
         </el-form-item>
@@ -119,6 +121,7 @@
         @current-change="currentChange"
       />
       <gbDeviceSelect ref="gbDeviceSelect" />
+      <onvifDeviceSelect ref="onvifDeviceSelect" />
     </div>
   </div>
 </template>
@@ -126,10 +129,11 @@
 <script>
 
 import gbDeviceSelect from '../../dialog/GbDeviceSelect.vue'
+import onvifDeviceSelect from '../../dialog/OnvifDeviceSelect.vue'
 
 export default {
   name: 'ShareChannelAdd',
-  components: { gbDeviceSelect },
+  components: { gbDeviceSelect, onvifDeviceSelect },
   props: ['platformId'],
   data() {
     return {
@@ -147,9 +151,11 @@ export default {
       multipleSelection: [],
       addLoading: false,
       addByDeviceLoading: false,
+      addByOnvifDeviceLoading: false,
       addAllLoading: false,
       removeLoading: false,
       removeByDeviceLoading: false,
+      removeByOnvifDeviceLoading: false,
       removeAllLoading: false
     }
   },
@@ -328,6 +334,70 @@ export default {
           })
           .finally(() => {
             this.removeByDeviceLoading = false
+          })
+      })
+    },
+
+    addByOnvifDevice: function(row) {
+      this.$refs.onvifDeviceSelect.openDialog((rows) => {
+        const deviceIds = []
+        for (let i = 0; i < rows.length; i++) {
+          deviceIds.push(rows[i].id)
+        }
+        if (deviceIds.length === 0) return
+        this.addByOnvifDeviceLoading = true
+        this.$store.dispatch('platform/addChannelByDevice', {
+          platformId: this.platformId,
+          deviceIds: deviceIds,
+          dataType: 4
+        })
+          .then(() => {
+            this.$message.success({
+              showClose: true,
+              message: '保存成功'
+            })
+            this.initData()
+          })
+          .catch((error) => {
+            this.$message.error({
+              showClose: true,
+              message: error
+            })
+          })
+          .finally(() => {
+            this.addByOnvifDeviceLoading = false
+          })
+      })
+    },
+
+    removeByOnvifDevice: function(row) {
+      this.$refs.onvifDeviceSelect.openDialog((rows) => {
+        const deviceIds = []
+        for (let i = 0; i < rows.length; i++) {
+          deviceIds.push(rows[i].id)
+        }
+        if (deviceIds.length === 0) return
+        this.removeByOnvifDeviceLoading = true
+        this.$store.dispatch('platform/removeChannelByDevice', {
+          platformId: this.platformId,
+          deviceIds: deviceIds,
+          dataType: 4
+        })
+          .then(() => {
+            this.$message.success({
+              showClose: true,
+              message: '保存成功'
+            })
+            this.initData()
+          })
+          .catch((error) => {
+            this.$message.error({
+              showClose: true,
+              message: error
+            })
+          })
+          .finally(() => {
+            this.removeByOnvifDeviceLoading = false
           })
       })
     },

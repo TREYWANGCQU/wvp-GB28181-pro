@@ -21,4 +21,7 @@ public class UpdateChannelParam {
 
     @Schema(description = "待关联的设备ID")
     List<Integer> deviceIds;
+
+    @Schema(description = "设备类型 (1: 国标设备, 4: ONVIF)")
+    private Integer dataType;
 }

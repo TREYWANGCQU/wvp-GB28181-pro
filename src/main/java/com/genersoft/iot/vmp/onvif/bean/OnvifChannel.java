@@ -22,6 +22,9 @@ public class OnvifChannel {
     @Schema(description = "主键ID")
     private Integer id;
 
+    @Schema(description = "WVP 核心通道主键 ID (wvp_device_channel.id)")
+    private Integer gbId;
+
     @Schema(description = "关联的物理设备ID")
     private Integer deviceId;
 

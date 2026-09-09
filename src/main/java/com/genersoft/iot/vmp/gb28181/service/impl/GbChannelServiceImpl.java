@@ -119,6 +119,11 @@ public class GbChannelServiceImpl implements IGbChannelService {
     }
 
     @Override
+    public CommonGBChannel queryByDataId(Integer dataType, Integer dataDeviceId) {
+        return commonGBChannelMapper.queryByDataId(dataType, dataDeviceId);
+    }
+
+    @Override
     public int add(CommonGBChannel commonGBChannel) {
         if (commonGBChannel.getDataType() == null || commonGBChannel.getDataDeviceId() == null) {
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "缺少通道数据类型或通道数据关联设备ID");

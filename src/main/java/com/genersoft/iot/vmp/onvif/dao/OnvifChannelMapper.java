@@ -32,9 +32,23 @@ public interface OnvifChannelMapper {
     @Select("SELECT * FROM wvp_onvif_channel WHERE id=#{id}")
     OnvifChannel selectById(@Param("id") Integer id);
 
-    @Select("SELECT * FROM wvp_onvif_channel WHERE device_id=#{deviceId} ORDER BY channel_index ASC, id ASC")
+    @Select("SELECT oc.*, dc.id AS gb_id, " +
+            "COALESCE(dc.gb_device_id, oc.gb_device_id) AS gb_device_id, " +
+            "COALESCE(dc.gb_name, oc.name) AS name " +
+            "FROM wvp_onvif_channel oc " +
+            "LEFT JOIN wvp_device_channel dc ON dc.data_type = 4 AND dc.data_device_id = oc.id " +
+            "WHERE oc.device_id = #{deviceId} ORDER BY oc.channel_index ASC, oc.id ASC")
     List<OnvifChannel> selectByDeviceId(@Param("deviceId") Integer deviceId);
 
     @Select("SELECT * FROM wvp_onvif_channel WHERE device_id=#{deviceId} AND profile_token=#{profileToken}")
     OnvifChannel selectByDeviceIdAndProfileToken(@Param("deviceId") Integer deviceId, @Param("profileToken") String profileToken);
+
+    @Update("UPDATE wvp_onvif_channel SET gb_device_id=#{gbDeviceId} WHERE id=#{id}")
+    int updateGbDeviceId(@Param("id") Integer id, @Param("gbDeviceId") String gbDeviceId);
+
+    @Select("<script>" +
+            "SELECT * FROM wvp_onvif_channel WHERE device_id IN " +
+            "<foreach collection='deviceIds' item='item' open='(' separator=',' close=')'>#{item}</foreach>" +
+            "</script>")
+    List<OnvifChannel> selectByDeviceIds(@Param("deviceIds") List<Integer> deviceIds);
 }

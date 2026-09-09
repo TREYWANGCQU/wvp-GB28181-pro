@@ -14,6 +14,8 @@ public interface IGbChannelService {
 
     CommonGBChannel queryByDeviceId(String gbDeviceId);
 
+    CommonGBChannel queryByDataId(Integer dataType, Integer dataDeviceId);
+
     int add(CommonGBChannel commonGBChannel);
 
     int delete(int gbId);

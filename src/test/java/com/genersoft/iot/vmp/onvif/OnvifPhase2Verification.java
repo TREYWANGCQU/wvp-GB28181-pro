@@ -3,6 +3,7 @@ package com.genersoft.iot.vmp.onvif;
 
 import com.genersoft.iot.vmp.common.enums.ChannelDataType;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
+import com.genersoft.iot.vmp.gb28181.dao.CommonGBChannelMapper;
 import com.genersoft.iot.vmp.gb28181.service.IGbChannelService;
 import com.genersoft.iot.vmp.onvif.bean.OnvifChannel;
 import com.genersoft.iot.vmp.onvif.bean.OnvifDevice;
@@ -151,6 +152,7 @@ public class OnvifPhase2Verification {
             OnvifChannelMapper mockChMapper = Mockito.mock(OnvifChannelMapper.class);
             OnvifSoapClient mockSoapClient = Mockito.mock(OnvifSoapClient.class);
             IGbChannelService mockGbChannelService = Mockito.mock(IGbChannelService.class);
+            CommonGBChannelMapper mockCommonGBChannelMapper = Mockito.mock(CommonGBChannelMapper.class);
 
             // Mock SOAP responses
             String mockUtcXml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
@@ -230,7 +232,7 @@ public class OnvifPhase2Verification {
                 return "";
             });
 
-            OnvifDeviceServiceImpl service = new OnvifDeviceServiceImpl(mockDevMapper, mockChMapper, mockSoapClient, mockGbChannelService);
+            OnvifDeviceServiceImpl service = new OnvifDeviceServiceImpl(mockDevMapper, mockChMapper, mockSoapClient, mockGbChannelService, mockCommonGBChannelMapper);
 
             OnvifDevice dev = OnvifDevice.builder()
                     .ip("192.168.1.64")

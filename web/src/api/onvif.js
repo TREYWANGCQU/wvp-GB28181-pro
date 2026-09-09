@@ -69,3 +69,22 @@ export function startOnvifPlay(channelId) {
     method: 'get'
   })
 }
+
+// 9. 更新 ONVIF 设备基础信息
+export function updateOnvifDevice(data) {
+  return request({
+    url: '/api/onvif/device/update',
+    method: 'post',
+    data
+  })
+}
+
+// 10. 批量导入 ONVIF 设备
+export function importOnvifDevices(formData) {
+  return request({
+    url: '/api/onvif/device/import',
+    method: 'post',
+    headers: { 'Content-Type': 'multipart/form-data' },
+    data: formData
+  })
+}

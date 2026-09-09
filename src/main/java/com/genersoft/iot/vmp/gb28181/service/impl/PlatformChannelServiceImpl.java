@@ -10,6 +10,8 @@ import com.genersoft.iot.vmp.gb28181.event.channel.ChannelEvent;
 import com.genersoft.iot.vmp.gb28181.event.subscribe.catalog.CatalogEvent;
 import com.genersoft.iot.vmp.gb28181.service.IPlatformChannelService;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.ISIPCommanderForPlatform;
+import com.genersoft.iot.vmp.onvif.bean.OnvifChannel;
+import com.genersoft.iot.vmp.onvif.dao.OnvifChannelMapper;
 import com.genersoft.iot.vmp.service.bean.GPSMsgInfo;
 import com.genersoft.iot.vmp.service.redisMsg.IRedisRpcService;
 import com.github.pagehelper.PageHelper;
@@ -47,6 +49,8 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
     private final RegionMapper regionMapper;
 
     private final CommonGBChannelMapper commonGBChannelMapper;
+
+    private final OnvifChannelMapper onvifChannelMapper;
 
     private final PlatformMapper platformMapper;
 
@@ -458,15 +462,51 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
     @Override
     @Transactional
     public void addChannelByDevice(Integer platformId, List<Integer> deviceIds) {
-        List<Integer> channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.GB28181, deviceIds);
-        addChannels(platformId, channelList);
+        addChannelByDevice(platformId, deviceIds, ChannelDataType.GB28181);
+    }
+
+    @Override
+    @Transactional
+    public void addChannelByDevice(Integer platformId, List<Integer> deviceIds, Integer dataType) {
+        List<Integer> channelList;
+        if (dataType != null && dataType == ChannelDataType.ONVIF) {
+            List<OnvifChannel> onvifChannels = onvifChannelMapper.selectByDeviceIds(deviceIds);
+            if (onvifChannels == null || onvifChannels.isEmpty()) {
+                return;
+            }
+            List<Integer> onvifChannelIds = onvifChannels.stream().map(OnvifChannel::getId).collect(Collectors.toList());
+            channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.ONVIF, onvifChannelIds);
+        } else {
+            channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.GB28181, deviceIds);
+        }
+        if (channelList != null && !channelList.isEmpty()) {
+            addChannels(platformId, channelList);
+        }
     }
 
     @Override
     @Transactional
     public void removeChannelByDevice(Integer platformId, List<Integer> deviceIds) {
-        List<Integer> channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.GB28181, deviceIds);
-        removeChannels(platformId, channelList);
+        removeChannelByDevice(platformId, deviceIds, ChannelDataType.GB28181);
+    }
+
+    @Override
+    @Transactional
+    public void removeChannelByDevice(Integer platformId, List<Integer> deviceIds, Integer dataType) {
+        List<Integer> channelList;
+        if (dataType != null && dataType == ChannelDataType.ONVIF) {
+            List<OnvifChannel> onvifChannels = onvifChannelMapper.selectByDeviceIds(deviceIds);
+            if (onvifChannels == null || onvifChannels.isEmpty()) {
+                return;
+            }
+            List<Integer> onvifChannelIds = onvifChannels.stream().map(OnvifChannel::getId).collect(Collectors.toList());
+            channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.ONVIF, onvifChannelIds);
+        } else {
+            channelList = commonGBChannelMapper.queryByGbDeviceIdsForIds(ChannelDataType.GB28181, deviceIds);
+        }
+        if (channelList != null && !channelList.isEmpty()) {
+            removeChannels(platformId, channelList);
+        }
     }
 
     private <T> List<List<T>> partition(List<T> list, int size) {

@@ -17,6 +17,7 @@
       <el-button type="primary" icon="el-icon-search" @click="fetchData">查询</el-button>
       <el-button type="success" icon="el-icon-plus" @click="handleAddManual">手动添加</el-button>
       <el-button type="warning" icon="el-icon-radar" @click="handleOpenDiscovery">局域网搜寻</el-button>
+      <el-button type="info" icon="el-icon-upload2" @click="importDialogVisible = true">批量导入</el-button>
     </div>
 
     <!-- 设备主表格 -->
@@ -48,10 +49,10 @@
                 </template>
               </el-table-column>
               <el-table-column prop="rtspUrl" label="RTSP 地址" show-overflow-tooltip />
-              <el-table-column label="操作" width="160" align="center">
+              <el-table-column label="操作" width="180" align="center">
                 <template slot-scope="scope">
-                  <el-button size="mini" type="primary" icon="el-icon-video-play" @click="handlePlay(scope.row)">点播</el-button>
-                  <el-button v-if="scope.row.hasPtz === 1" size="mini" type="warning" icon="el-icon-coordinate" @click="handlePtz(props.row, scope.row)">云台</el-button>
+                  <el-button size="mini" type="primary" icon="el-icon-video-play" @click="handlePlay(scope.row)">播放</el-button>
+                  <el-button size="mini" type="success" icon="el-icon-edit" @click="handleEditChannel(scope.row)">编辑</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -72,8 +73,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" align="center">
+      <el-table-column label="操作" width="260" align="center">
         <template slot-scope="scope">
+          <el-button size="mini" type="text" icon="el-icon-video-play" @click="handlePlayDevice(scope.row)">播放</el-button>
           <el-button size="mini" type="text" icon="el-icon-refresh" @click="handleSync(scope.row)">同步Profile</el-button>
           <el-button size="mini" type="text" style="color: #F56C6C;" icon="el-icon-delete" @click="handleDelete(scope.row)">删除</el-button>
         </template>
@@ -94,6 +96,9 @@
 
     <!-- 弹窗：局域网一键搜寻 -->
     <device-discovery v-if="discoveryVisible" :visible.sync="discoveryVisible" @success="fetchData" />
+
+    <!-- 弹窗：批量导入 -->
+    <import-device v-if="importDialogVisible" :visible.sync="importDialogVisible" @success="fetchData" />
 
     <!-- 弹窗：手动添加设备 -->
     <el-dialog title="接入 ONVIF 设备" :visible.sync="dialogAddVisible" width="500px">
@@ -120,21 +125,42 @@
       </div>
     </el-dialog>
 
-    <!-- 抽屉：云台控制盘 -->
-    <el-drawer title="云台控制" :visible.sync="ptzDrawerVisible" size="360px">
-      <ptz-controller v-if="ptzDrawerVisible" :channel="currentChannel" />
+    <!-- 抽屉：编辑通道国标属性 -->
+    <el-drawer
+      title="编辑通道国标属性"
+      :visible.sync="editChannelDrawerVisible"
+      size="700px"
+      :destroy-on-close="true"
+    >
+      <common-channel-edit
+        v-if="editChannelDrawerVisible"
+        :id="currentEditingGbId"
+        :show-cancel="true"
+        @submitSuccess="handleChannelEditSuccess"
+        @cancel="editChannelDrawerVisible = false"
+      />
     </el-drawer>
+
+    <!-- 通用弹窗播放器 (含同屏PTZ云台控制器) -->
+    <channel-player ref="devicePlayer" />
   </div>
 </template>
 
 <script>
 import { getOnvifDeviceList, addOnvifDevice, deleteOnvifDevice, syncOnvifChannels, getOnvifChannels } from '@/api/onvif'
 import DeviceDiscovery from './deviceDiscovery.vue'
-import PtzController from './ptzController.vue'
+import ImportDevice from './dialog/importDevice.vue'
+import ChannelPlayer from '@/views/channel/player.vue'
+import CommonChannelEdit from '@/views/common/CommonChannelEdit.vue'
 
 export default {
   name: 'OnvifDeviceIndex',
-  components: { DeviceDiscovery, PtzController },
+  components: {
+    DeviceDiscovery,
+    ImportDevice,
+    ChannelPlayer,
+    CommonChannelEdit
+  },
   data() {
     return {
       listLoading: false,
@@ -144,8 +170,10 @@ export default {
       listQuery: { page: 1, count: 10, query: '', status: null },
       dialogAddVisible: false,
       discoveryVisible: false,
-      ptzDrawerVisible: false,
-      currentChannel: null,
+      importDialogVisible: false,
+      editChannelDrawerVisible: false,
+      currentEditingGbId: null,
+      currentEditingDeviceId: null,
       tempDevice: { name: '', ip: '', port: 80, username: 'admin', password: '' },
       rules: {
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
@@ -210,12 +238,63 @@ export default {
       })
     },
     handlePlay(channel) {
-      // 路由跳转至分屏监控或弹窗播放器
-      this.$router.push({ path: '/live', query: { channelId: channel.gbDeviceId }})
+      if (!channel || !channel.gbId) {
+        this.$message.warning('该通道尚未挂接有效国标主键，请重新同步Profile')
+        return
+      }
+      const loading = this.$loading({
+        lock: true,
+        text: '正在发起点播拉流...',
+        spinner: 'el-icon-loading',
+        background: 'rgba(0, 0, 0, 0.7)'
+      })
+      this.$store.dispatch('commonChanel/playChannel', channel.gbId)
+        .then(data => {
+          this.$refs.devicePlayer.openDialog('media', channel.gbId, {
+            streamInfo: data,
+            hasAudio: false
+          })
+        })
+        .catch(err => {
+          this.$message.error(typeof err === 'string' ? err : (err && err.msg) || '点播拉流失败')
+        })
+        .finally(() => {
+          loading.close()
+        })
     },
-    handlePtz(device, channel) {
-      this.currentChannel = channel
-      this.ptzDrawerVisible = true
+    handlePlayDevice(row) {
+      if (row.channels && row.channels.length > 0) {
+        this.handlePlay(row.channels[0])
+      } else {
+        getOnvifChannels(row.id).then(res => {
+          row.channels = res.data
+          if (row.channels && row.channels.length > 0) {
+            this.handlePlay(row.channels[0])
+          } else {
+            this.$message.warning('该设备暂无可用码流通道，请先同步Profile')
+          }
+        })
+      }
+    },
+    handleEditChannel(channel) {
+      if (!channel || !channel.gbId) {
+        this.$message.warning('该通道尚未挂接国标主键，请先重新同步Profile')
+        return
+      }
+      this.currentEditingGbId = channel.gbId
+      this.currentEditingDeviceId = channel.deviceId
+      this.editChannelDrawerVisible = true
+    },
+    handleChannelEditSuccess() {
+      this.editChannelDrawerVisible = false
+      if (this.currentEditingDeviceId) {
+        getOnvifChannels(this.currentEditingDeviceId).then(res => {
+          const dev = this.deviceList.find(d => d.id === this.currentEditingDeviceId)
+          if (dev) {
+            dev.channels = res.data
+          }
+        })
+      }
     },
     handleSizeChange(val) { this.listQuery.count = val; this.fetchData() },
     handleCurrentChange(val) { this.listQuery.page = val; this.fetchData() }

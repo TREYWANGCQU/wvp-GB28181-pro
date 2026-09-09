@@ -263,7 +263,7 @@ public class PlatformController {
         Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         Assert.notNull(param.getDeviceIds(), "设备ID不可为空");
         Assert.notEmpty(param.getDeviceIds(), "设备ID不可为空");
-        platformChannelService.addChannelByDevice(param.getPlatformId(), param.getDeviceIds());
+        platformChannelService.addChannelByDevice(param.getPlatformId(), param.getDeviceIds(), param.getDataType());
     }
 
     @Operation(summary = "移除通道-通过设备", security = @SecurityRequirement(name = JwtUtils.HEADER))
@@ -273,7 +273,7 @@ public class PlatformController {
         Assert.notNull(param.getPlatformId(), "平台ID不可为空");
         Assert.notNull(param.getDeviceIds(), "设备ID不可为空");
         Assert.notEmpty(param.getDeviceIds(), "设备ID不可为空");
-        platformChannelService.removeChannelByDevice(param.getPlatformId(), param.getDeviceIds());
+        platformChannelService.removeChannelByDevice(param.getPlatformId(), param.getDeviceIds(), param.getDataType());
     }
 
     @Operation(summary = "自定义共享通道信息", security = @SecurityRequirement(name = JwtUtils.HEADER))

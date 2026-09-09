@@ -11,7 +11,7 @@ spring:
       password: "" # 若容器未设密码可留空
   datasource:
     # 指向 192.168.30.x Linux 测试机的 MySQL 8.0 容器 (或使用 SSH 映射填 127.0.0.1:3306)
-    url: jdbc:mysql://192.168.30.100:3306/wvp?useUnicode=true&characterEncoding=UTF8&rewriteBatchedStatements=true&serverTimezone=PRC&useSSL=false&allowMultiQueries=true
+    url: jdbc:mysql://192.168.10.27:3306/wvp?useUnicode=true&characterEncoding=UTF8&rewriteBatchedStatements=true&serverTimezone=PRC&useSSL=false&allowMultiQueries=true
     username: root
     password: root
 
@@ -32,7 +32,7 @@ media:
   # [重点避坑] 明确通知 ZLM 回调 Windows 11 主开发机的 IP 地址
   hook-ip: 192.168.30.252
   # 与 ZLM 容器中的 secret 严格匹配
-  secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
+  secret: AzmbJcNEu3wJUPImx72ckPSxCzQ27HEX
   rtp:
     enable: true
     # 与 docker/infra/docker-compose.yml 暴露端口段 strictly 匹配
