@@ -39,6 +39,10 @@ media:
   hook-ip: 127.0.0.1
   secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
   auto-config: true
+  rtp:
+    enable: true
+    port-range: 30000,30050
+    send-port-range: 30000,30050
 
 logging:
   file:

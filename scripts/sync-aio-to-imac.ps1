@@ -1,4 +1,4 @@
-# scripts/sync-to-imac.ps1
+# scripts/sync-aio-to-imac.ps1
 <#
 .SYNOPSIS
     WVP All-in-One 镜像构建资产极速增量同步脚本 (Windows 11 -> iMac 配合机)

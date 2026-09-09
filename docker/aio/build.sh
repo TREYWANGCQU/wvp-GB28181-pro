@@ -25,6 +25,17 @@ echo "  发布版本号  : ${VERSION} 及 latest"
 echo "  执行动作    : ${ACTION}"
 echo "============================================================"
 
+# 自动检测构建模式：若上下文中已存在预编译 wvp.jar 与 init.sql，则启用 Dockerfile.fast 极速构建
+if [ -z "${DOCKERFILE}" ]; then
+    if [ -f "wvp.jar" ] && [ -f "init.sql" ]; then
+        DOCKERFILE="docker/aio/Dockerfile.fast"
+        echo "[Build] 检测到预编译资产 (wvp.jar & init.sql)，自动启用极速拼装模式: ${DOCKERFILE}"
+    else
+        DOCKERFILE="docker/aio/Dockerfile"
+        echo "[Build] 未检测到预编译资产，启用容器内全源码构建模式: ${DOCKERFILE}"
+    fi
+fi
+
 # 确保 buildx 实例就绪
 if ! docker buildx inspect aio-builder >/dev/null 2>&1; then
     echo "[Buildx] 创建并初始化 aio-builder 多架构构建器..."
@@ -47,7 +58,7 @@ if [ "$ACTION" = "load" ]; then
     docker buildx build \
         --platform "${TARGET_ARCH}" \
         -t "${IMAGE_NAME}:test" \
-        -f docker/aio/Dockerfile \
+        -f "${DOCKERFILE}" \
         --load \
         .
     echo "[Build] 本地镜像构建并加载完成: ${IMAGE_NAME}:test"
@@ -57,7 +68,7 @@ else
         --platform "${PLATFORMS}" \
         -t "${DOCKER_USER}/${IMAGE_NAME}:${VERSION}" \
         -t "${DOCKER_USER}/${IMAGE_NAME}:latest" \
-        -f docker/aio/Dockerfile \
+        -f "${DOCKERFILE}" \
         --push \
         .
     echo "============================================================"

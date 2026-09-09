@@ -128,9 +128,14 @@ COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/MediaServer /opt
 COPY --from=zlm-builder /build/ZLMediaKit/release/linux/Release/default.pem /opt/media/bin/default.pem
 COPY --from=zlm-builder /build/ZLMediaKit/www/ /opt/media/bin/www/
 
-# 3.3 WVP-PRO Jar 包与数据库脚本
+# 3.3 WVP-PRO Jar 包与数据库脚本（自动合并基础表与 ONVIF 增量表）
 COPY --from=wvp-builder /build/target/wvp-pro-*.jar /opt/wvp/wvp.jar
-COPY 数据库/2.7.4/初始化-mysql-2.7.4.sql /opt/wvp/init.sql
+COPY 数据库/2.7.4/初始化-mysql-2.7.4.sql /tmp/init-base.sql
+COPY 数据库/2.7.4/增量-onvif.sql /tmp/init-onvif.sql
+RUN cat /tmp/init-base.sql > /opt/wvp/init.sql && \
+    printf "\n\n-- ==================== ONVIF INCREMENTAL TABLES ====================\n\n" >> /opt/wvp/init.sql && \
+    cat /tmp/init-onvif.sql >> /opt/wvp/init.sql && \
+    rm -f /tmp/init-*.sql
 
 # 3.4 出厂配置模板与进程监督引擎
 COPY docker/aio/conf/application-aio.yml /opt/wvp/templates/application-aio.yml

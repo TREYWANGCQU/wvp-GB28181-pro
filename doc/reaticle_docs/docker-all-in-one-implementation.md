@@ -37,7 +37,7 @@
 |  [web/]                         [src/main/resources/static]            [target/wvp-pro-2.7.4.jar]     |
 |   Node.js 打包 (OpenSSL 3兼容) ====> 前端静态资源写入目录 ===============> Maven 生产打包 (跳过单元测试)       |
 |                                                                                    ||                 |
-|                                [scripts/sync-to-imac.ps1]                          ||                 |
+|                                [scripts/sync-aio-to-imac.ps1]                      ||                 |
 |  - 资产收集: jar + docker/aio/ + init.sql + LF换行净化 =============================+                 |
 |  - 传输协议: SCP / SFTP / Rsync over OpenSSH                                                          |
 +---------------------------------------------------+---------------------------------------------------+
@@ -161,10 +161,10 @@ Get-Item .\target\wvp-pro-2.7.4.jar | Select-Object Name, Length, LastWriteTime
 
 ### 3.3 编制 Windows 自动化同步脚本
 
-在 Windows 主开发机上，创建标准同步脚本 `scripts/sync-to-imac.ps1`：
+在 Windows 主开发机上，创建标准同步脚本 `scripts/sync-aio-to-imac.ps1`：
 
 ```powershell
-# scripts/sync-to-imac.ps1
+# scripts/sync-aio-to-imac.ps1
 <#
 .SYNOPSIS
     WVP All-in-One 镜像构建资产极速增量同步脚本 (Windows 11 -> iMac 配合机)
@@ -276,7 +276,7 @@ Write-Host "============================================================" -Foreg
 在 Windows PowerShell 中运行：
 
 ```powershell
-.\scripts\sync-to-imac.ps1 -iMacHost "192.168.1.50" -iMacUser "reaticle"
+.\scripts\sync-aio-to-imac.ps1 -iMacHost "192.168.1.50" -iMacUser "reaticle"
 ```
 
 ---
@@ -498,6 +498,10 @@ media:
   hook-ip: 127.0.0.1
   secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
   auto-config: true
+  rtp:
+    enable: true
+    port-range: 30000,30050
+    send-port-range: 30000,30050
 
 logging:
   file:
@@ -574,10 +578,15 @@ appendonly no
 save ""
 ```
 
-### 4.4 多阶段跨平台极速加速构建 Dockerfile (`docker/aio/Dockerfile`)
+### 4.4 预编译极速加速构建 Dockerfile (`docker/aio/Dockerfile.fast`)
+
+> [!NOTE]
+> - **双机同步极速模式（推荐）**：使用 `docker/aio/Dockerfile.fast`。依赖 Windows 主机同步的 `wvp.jar` 与 `init.sql`，在 iMac 上仅编译 C++ 流媒体引擎与定制 JRE，构建速度最快。
+> - **单机全源码编译模式**：使用 `docker/aio/Dockerfile`。容器内包含 Node.js、Maven、C++ 全链路构建，自动合并基础表与 `增量-onvif.sql`。
+> - `docker/aio/build.sh` 会自动探测上下文，若存在 `wvp.jar` 与 `init.sql` 则自动优先采用 `Dockerfile.fast`。
 
 ```dockerfile
-# docker/aio/Dockerfile
+# docker/aio/Dockerfile.fast
 
 # ==============================================================================
 # Stage 1: 基于目标平台生成微型定制 JRE (依赖 TARGETPLATFORM 保证指令集匹配)
@@ -752,7 +761,7 @@ ls -la docker/aio/
 docker buildx build \
     --platform linux/arm64 \
     -t wvp-pro-aio:test \
-    -f docker/aio/Dockerfile \
+    -f docker/aio/Dockerfile.fast \
     --load .
 
 # 2. 检查本地镜像体积
@@ -802,6 +811,17 @@ docker stop wvp-test && docker rm wvp-test
    echo "  目标指令集  : ${PLATFORMS}"
    echo "============================================================"
 
+   # 自动检测构建模式：若上下文中已存在预编译 wvp.jar 与 init.sql，则启用 Dockerfile.fast 极速构建
+   if [ -z "${DOCKERFILE}" ]; then
+       if [ -f "wvp.jar" ] && [ -f "init.sql" ]; then
+           DOCKERFILE="docker/aio/Dockerfile.fast"
+           echo "[Build] 检测到预编译资产 (wvp.jar & init.sql)，自动启用极速拼装模式: ${DOCKERFILE}"
+       else
+           DOCKERFILE="docker/aio/Dockerfile"
+           echo "[Build] 未检测到预编译资产，启用容器内全源码构建模式: ${DOCKERFILE}"
+       fi
+   fi
+
    # 激活构建器
    docker buildx use aio-builder 2>/dev/null || docker buildx create --name aio-builder --use
 
@@ -810,7 +830,7 @@ docker stop wvp-test && docker rm wvp-test
        --platform "${PLATFORMS}" \
        -t "${DOCKER_USER}/${IMAGE_NAME}:${VERSION}" \
        -t "${DOCKER_USER}/${IMAGE_NAME}:latest" \
-       -f docker/aio/Dockerfile \
+       -f "${DOCKERFILE}" \
        --push \
        .
 
@@ -859,7 +879,7 @@ Manifests:
 ### 6.1 Windows 同步换行符导致容器 Entrypoint 崩溃
 - **现象**：容器启动即报 `/usr/local/bin/entrypoint.sh: line 2: $'\r': command not found`。
 - **根因**：Windows PowerShell / Git 默认可能以 CRLF 保存脚本。
-- **解法**：在 `scripts/sync-to-imac.ps1` 中已内置换行符过滤；若仍出现，可在 iMac 执行 `dos2unix docker/aio/entrypoint.sh` 或在 Dockerfile 中通过 `sed -i 's/\r$//' /usr/local/bin/entrypoint.sh` 防御。
+- **解法**：在 `scripts/sync-aio-to-imac.ps1` 中已内置换行符过滤；若仍出现，可在 iMac 执行 `dos2unix docker/aio/entrypoint.sh` 或在 Dockerfile 中通过 `sed -i 's/\r$//' /usr/local/bin/entrypoint.sh` 防御。
 
 ### 6.2 Colima 跨架构 C++ 编译 OOM 崩溃
 - **现象**：构建 `zlm-builder` 阶段执行 `cmake --build .` 时抛出 `g++: fatal error: Killed signal terminated program cc1plus`。
@@ -894,7 +914,7 @@ Manifests:
 | **Windows 前置** | 1 | 前端编译产物归位 | `Test-Path .\src\main\resources\static\index.html` 必须为 True | [ ] |
 | | 2 | 后端 Jar 成功生成 | `target\wvp-pro-2.7.4.jar` 大小在 60MB~80MB 之间 | [ ] |
 | | 3 | 数据库合流产物生成 | `target\init-combined.sql` 包含 `wvp_onvif_device` 表结构 | [ ] |
-| **双机同步** | 4 | SSH 免密与文件推送 | `.\scripts\sync-to-imac.ps1` 执行无退出码异常 | [ ] |
+| **双机同步** | 4 | SSH 免密与文件推送 | `.\scripts\sync-aio-to-imac.ps1` 执行无退出码异常 | [ ] |
 | | 5 | 脚本换行符净化 | iMac 执行 `file ~/wvp-aio-build/docker/aio/entrypoint.sh` 显示 `ASCII text, with LF line terminators` | [ ] |
 | **iMac 构建** | 6 | Buildx 实例处于活动状态 | `docker buildx ls` 显示 `aio-builder *` | [ ] |
 | | 7 | 本地单架构冒烟成功 | `docker run` 容器后，四服务端口及 3702/udp 在 20 秒内全部绿灯就绪 | [ ] |
