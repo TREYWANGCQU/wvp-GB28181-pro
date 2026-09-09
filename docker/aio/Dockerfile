@@ -46,9 +46,9 @@ RUN echo "[Stage 3] 针对目标架构执行 JRE 21 定制裁剪 (jlink)..." && 
     --output /opt/java-runtime
 
 # ==============================================================================
-# Stage 4: 目标架构编译 ZLMediaKit (针对 Alpine Linux musl libc 优化)
+# Stage 4: 目标架构编译 ZLMediaKit (针对 Alpine Linux musl libc 优化，使用 3.19 内置 libsrtp 2.5.0)
 # ==============================================================================
-FROM --platform=$TARGETPLATFORM alpine:3.20 AS zlm-builder
+FROM --platform=$TARGETPLATFORM alpine:3.19 AS zlm-builder
 
 RUN apk update && apk add --no-cache \
     build-base \
@@ -57,6 +57,7 @@ RUN apk update && apk add --no-cache \
     linux-headers \
     openssl-dev \
     libsrtp-dev \
+    pkgconf \
     coreutils
 
 WORKDIR /build
@@ -65,20 +66,20 @@ RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
     cd ZLMediaKit && git submodule update --init --recursive --depth 1
 
 WORKDIR /build/ZLMediaKit/build
-# 开启 WebRTC、关闭单元测试、采用 Release 构建并剥离符号
+# 开启 WebRTC、关闭单元测试、采用 Release 构建并剥离符号 (限并发 -j2 规避 Colima OOM 崩溃)
 RUN cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_WEBRTC=ON \
     -DENABLE_TESTS=OFF \
     -DENABLE_API=ON \
     -DENABLE_SERVER=ON && \
-    cmake --build . --target MediaServer -j$(nproc) && \
+    cmake --build . --target MediaServer -j2 && \
     strip --strip-all /build/ZLMediaKit/release/linux/Release/MediaServer
 
 # ==============================================================================
-# Stage 5: 最终精简生产运行底座 (Alpine Linux 3.20)
+# Stage 5: 最终精简生产运行底座 (Alpine Linux 3.19)
 # ==============================================================================
-FROM --platform=$TARGETPLATFORM alpine:3.20 AS final-runner
+FROM --platform=$TARGETPLATFORM alpine:3.19 AS final-runner
 
 LABEL maintainer="reaticle <y.wang@reaticle.com>"
 LABEL description="WVP-PRO All-in-One: Java 21 + Vue UI + ZLM + MariaDB + Redis"
