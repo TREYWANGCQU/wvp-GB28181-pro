@@ -3,6 +3,7 @@ package com.genersoft.iot.vmp.onvif.service;
 
 import com.genersoft.iot.vmp.onvif.bean.OnvifChannel;
 import com.genersoft.iot.vmp.onvif.bean.OnvifDevice;
+import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceExportRequest;
 import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceImportDto;
 import com.genersoft.iot.vmp.onvif.dto.OnvifImportResult;
 import com.github.pagehelper.PageInfo;
@@ -24,6 +25,8 @@ public interface IOnvifDeviceService {
     void deleteDevice(Integer deviceId);
 
     OnvifImportResult importDevices(List<OnvifDeviceImportDto> importList);
+
+    List<OnvifDeviceImportDto> getExportDeviceList(OnvifDeviceExportRequest request);
 
     PageInfo<OnvifDevice> getDeviceList(int page, int count, String query, Integer status);
 

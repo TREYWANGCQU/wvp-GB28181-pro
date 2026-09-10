@@ -10,7 +10,7 @@
   >
     <div v-loading="loading" element-loading-text="正在上传并连接设备探测纳管中...">
       <div style="margin-bottom: 16px; font-size: 13px; color: #606266; line-height: 1.6;">
-        请先下载标准导入模板，按照格式填写设备 IP、端口、鉴权凭据及可选的国标编码后拖拽上传。
+        请先下载标准导入模板，按照格式填写设备 IP、端口、鉴权凭据及可选的国标编码后拖拽上传。若设备 IP 已存在将自动执行覆盖更新（支持批量修改设备名称与国标编码）。
         <div style="margin-top: 8px; display: flex; align-items: center;">
           <el-button type="primary" size="mini" icon="el-icon-download" :loading="downloading" @click="handleDownloadTemplate">
             下载导入模板 (.xlsx)
@@ -41,7 +41,7 @@
       <!-- 结果展示区 -->
       <div v-if="result" style="margin-top: 20px;">
         <el-alert
-          :title="`导入完成：共 ${result.total} 台，成功纳管 ${result.success} 台，失败 ${result.failure} 台`"
+          :title="`导入完成：共 ${result.total} 台，成功纳管/更新 ${result.success} 台，失败 ${result.failure} 台`"
           :type="result.failure > 0 ? 'warning' : 'success'"
           show-icon
           :closable="false"
@@ -160,7 +160,7 @@ export default {
         .then(res => {
           this.result = res.data
           if (this.result.failure === 0) {
-            this.$message.success(`成功导入 ${this.result.success} 台设备`)
+            this.$message.success(`成功导入/更新 ${this.result.success} 台设备`)
           } else {
             this.$message.warning(`导入完成，有 ${this.result.failure} 台设备失败`)
           }

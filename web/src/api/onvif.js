@@ -88,3 +88,13 @@ export function importOnvifDevices(formData) {
     data: formData
   })
 }
+
+// 11. 批量导出 ONVIF 设备为 Excel
+export function exportOnvifDevices(data) {
+  return request({
+    url: '/api/onvif/device/export',
+    method: 'post',
+    responseType: 'blob',
+    data
+  })
+}

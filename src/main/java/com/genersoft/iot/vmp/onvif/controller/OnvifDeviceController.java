@@ -6,6 +6,7 @@ import com.genersoft.iot.vmp.conf.exception.ControllerException;
 import com.genersoft.iot.vmp.onvif.bean.OnvifChannel;
 import com.genersoft.iot.vmp.onvif.bean.OnvifDevice;
 import com.genersoft.iot.vmp.onvif.dao.OnvifChannelMapper;
+import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceExportRequest;
 import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceImportDto;
 import com.genersoft.iot.vmp.onvif.dto.OnvifImportResult;
 import com.genersoft.iot.vmp.onvif.service.IOnvifDeviceService;
@@ -132,6 +133,25 @@ public class OnvifDeviceController {
         } catch (Exception e) {
             log.error("[ONVIF] 解析导入文件失败: {}", e.getMessage(), e);
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "解析导入文件失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/export")
+    @Operation(summary = "批量导出选中的 ONVIF 设备为 Excel")
+    public void exportDevices(@RequestBody(required = false) OnvifDeviceExportRequest request, HttpServletResponse response) {
+        try {
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setCharacterEncoding("utf-8");
+            String fileName = URLEncoder.encode("onvif_devices_export", StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+            response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
+
+            List<OnvifDeviceImportDto> exportList = deviceService.getExportDeviceList(request);
+            EasyExcel.write(response.getOutputStream(), OnvifDeviceImportDto.class)
+                    .sheet("ONVIF设备清单")
+                    .doWrite(exportList);
+        } catch (Exception e) {
+            log.error("[ONVIF] 批量导出设备失败: {}", e.getMessage(), e);
+            throw new ControllerException(ErrorCode.ERROR100.getCode(), "批量导出设备失败: " + e.getMessage());
         }
     }
 }

@@ -14,6 +14,7 @@ import com.genersoft.iot.vmp.onvif.client.OnvifXmlBuilder;
 import com.genersoft.iot.vmp.onvif.client.OnvifXmlParser;
 import com.genersoft.iot.vmp.onvif.dao.OnvifChannelMapper;
 import com.genersoft.iot.vmp.onvif.dao.OnvifDeviceMapper;
+import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceExportRequest;
 import com.genersoft.iot.vmp.onvif.dto.OnvifDeviceImportDto;
 import com.genersoft.iot.vmp.onvif.dto.OnvifImportResult;
 import com.genersoft.iot.vmp.onvif.service.IOnvifDeviceService;
@@ -31,8 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -69,9 +69,14 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
         device.setCreateTime(DateUtil.getNow());
         device.setUpdateTime(DateUtil.getNow());
         device.setStatus(1);
+
+        // 3. 在网络探针成功后原子分配最小未占用 ID，优先复用被删除释放的空洞
+        if (device.getId() == null) {
+            device.setId(getNextAvailableDeviceId(null));
+        }
         deviceMapper.insert(device);
 
-        // 3. 自动同步通道 Profile 并生成国标挂接
+        // 4. 自动同步通道 Profile 并生成国标挂接
         syncChannels(device.getId());
 
         return device;
@@ -243,18 +248,33 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
                         gbChannelService.add(gbChannel);
                     }
                 } else {
+                    // 若传入了新的 customGbDeviceId 且为首通道，则以此为准更新通道
+                    if (channel.getChannelIndex() == 1 && customGbDeviceId != null && !customGbDeviceId.trim().isEmpty()) {
+                        channel.setGbDeviceId(customGbDeviceId.trim());
+                    }
                     channelMapper.update(channel);
                     CommonGBChannel gbChannel = channel.toCommonGBChannel(device);
                     CommonGBChannel existingGb = gbChannelService.queryByDataId(ChannelDataType.ONVIF, channel.getId());
                     if (existingGb != null) {
                         gbChannel.setGbId(existingGb.getGbId());
-                        if (existingGb.getGbDeviceId() != null && !existingGb.getGbDeviceId().isEmpty()) {
+                        if (channel.getChannelIndex() == 1 && customGbDeviceId != null && !customGbDeviceId.trim().isEmpty()) {
+                            gbChannel.setGbDeviceId(customGbDeviceId.trim());
+                            channel.setGbDeviceId(customGbDeviceId.trim());
+                            channelMapper.updateGbDeviceId(channel.getId(), customGbDeviceId.trim());
+                        } else if (existingGb.getGbDeviceId() != null && !existingGb.getGbDeviceId().isEmpty()) {
                             gbChannel.setGbDeviceId(existingGb.getGbDeviceId());
                             channel.setGbDeviceId(existingGb.getGbDeviceId());
                             channelMapper.updateGbDeviceId(channel.getId(), existingGb.getGbDeviceId());
                         }
-                        if (existingGb.getGbName() != null && !existingGb.getGbName().isEmpty()) {
+                        if (device.getName() != null && !device.getName().isEmpty()) {
+                            gbChannel.setGbName(device.getName());
+                        } else if (existingGb.getGbName() != null && !existingGb.getGbName().isEmpty()) {
                             gbChannel.setGbName(existingGb.getGbName());
+                        }
+                        if (civilCode != null && !civilCode.trim().isEmpty()) {
+                            gbChannel.setGbCivilCode(civilCode.trim());
+                        } else if (existingGb.getGbCivilCode() != null) {
+                            gbChannel.setGbCivilCode(existingGb.getGbCivilCode());
                         }
                         gbChannelService.update(gbChannel);
                     } else {
@@ -341,6 +361,8 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
         }
         result.setTotal(importList.size());
         int rowIndex = 1;
+        Set<Integer> reservedIds = new HashSet<>();
+
         for (OnvifDeviceImportDto dto : importList) {
             rowIndex++;
             try {
@@ -359,14 +381,52 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
                     result.setFailure(result.getFailure() + 1);
                     continue;
                 }
-                int port = (dto.getPort() != null && dto.getPort() > 0) ? dto.getPort() : 80;
-                OnvifDevice exist = deviceMapper.selectByIpAndPort(dto.getIp().trim(), port);
+
+                int port = (dto.getPort() != null && dto.getPort() > 0) ? dto.getPort() : 0;
+                OnvifDevice exist = null;
+                if (port > 0) {
+                    exist = deviceMapper.selectByIpAndPort(dto.getIp().trim(), port);
+                } else {
+                    List<OnvifDevice> ipDevices = deviceMapper.selectListByIp(dto.getIp().trim());
+                    if (ipDevices != null && ipDevices.size() == 1) {
+                        exist = ipDevices.get(0);
+                        port = exist.getPort();
+                    } else {
+                        port = 80;
+                        exist = deviceMapper.selectByIpAndPort(dto.getIp().trim(), port);
+                    }
+                }
+
+                // 模式一：命中已有 IP，走覆盖更新模式 (Upsert)
                 if (exist != null) {
-                    result.getErrorMessages().add("第 " + rowIndex + " 行 [" + dto.getIp() + ":" + port + "]: 设备已存在");
-                    result.setFailure(result.getFailure() + 1);
+                    if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
+                        exist.setName(dto.getName().trim());
+                    }
+                    if (dto.getMediaServerId() != null && !dto.getMediaServerId().trim().isEmpty()) {
+                        exist.setMediaServerId(dto.getMediaServerId().trim());
+                    }
+                    boolean credChanged = false;
+                    if (dto.getUsername() != null && !dto.getUsername().trim().isEmpty() && !dto.getUsername().trim().equals(exist.getUsername())) {
+                        exist.setUsername(dto.getUsername().trim());
+                        credChanged = true;
+                    }
+                    if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty() && !dto.getPassword().trim().equals(exist.getPassword())) {
+                        exist.setPassword(dto.getPassword().trim());
+                        credChanged = true;
+                    }
+                    if (credChanged) {
+                        probeAndSyncMetadata(exist);
+                    }
+                    exist.setUpdateTime(DateUtil.getNow());
+                    deviceMapper.update(exist);
+
+                    // 穿透同步通道与国标挂接信息
+                    syncChannels(exist.getId(), dto.getGbDeviceId(), dto.getCivilCode());
+                    result.setSuccess(result.getSuccess() + 1);
                     continue;
                 }
 
+                // 模式二：未命中已有设备，走新增设备模式
                 String name = (dto.getName() != null && !dto.getName().trim().isEmpty()) ? dto.getName().trim() : "ONVIF-" + dto.getIp().trim();
                 OnvifDevice device = OnvifDevice.builder()
                         .name(name)
@@ -381,6 +441,7 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
                         .build();
 
                 probeAndSyncMetadata(device);
+                device.setId(getNextAvailableDeviceId(reservedIds));
                 deviceMapper.insert(device);
                 syncChannels(device.getId(), dto.getGbDeviceId(), dto.getCivilCode());
                 result.setSuccess(result.getSuccess() + 1);
@@ -391,6 +452,81 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
             }
         }
         return result;
+    }
+
+    @Override
+    public List<OnvifDeviceImportDto> getExportDeviceList(OnvifDeviceExportRequest request) {
+        List<OnvifDeviceImportDto> exportList = new ArrayList<>();
+        // 场景 A: 存在前台直接传入的自定义待导出设备（来自搜寻向导）
+        if (request != null && request.getCustomDevices() != null && !request.getCustomDevices().isEmpty()) {
+            return request.getCustomDevices();
+        }
+
+        // 场景 B: 按选中的设备 ID 集合或全量查询已纳管设备
+        List<OnvifDevice> devices;
+        if (request != null && request.getDeviceIds() != null && !request.getDeviceIds().isEmpty()) {
+            devices = deviceMapper.selectByIds(request.getDeviceIds());
+        } else {
+            devices = deviceMapper.selectList(null, null);
+        }
+
+        if (devices == null || devices.isEmpty()) {
+            return exportList;
+        }
+
+        for (OnvifDevice dev : devices) {
+            String gbDeviceId = null;
+            String civilCode = null;
+
+            List<OnvifChannel> channels = channelMapper.selectByDeviceId(dev.getId());
+            if (channels != null && !channels.isEmpty()) {
+                OnvifChannel ch1 = channels.get(0);
+                gbDeviceId = ch1.getGbDeviceId();
+                CommonGBChannel gb = gbChannelService.queryByDataId(ChannelDataType.ONVIF, ch1.getId());
+                if (gb != null) {
+                    if (gb.getGbDeviceId() != null && !gb.getGbDeviceId().isEmpty()) {
+                        gbDeviceId = gb.getGbDeviceId();
+                    }
+                    civilCode = gb.getGbCivilCode();
+                }
+            }
+
+            OnvifDeviceImportDto dto = OnvifDeviceImportDto.builder()
+                    .name(dev.getName())
+                    .ip(dev.getIp())
+                    .port(dev.getPort())
+                    .username(dev.getUsername())
+                    .password(dev.getPassword())
+                    .mediaServerId(dev.getMediaServerId())
+                    .gbDeviceId(gbDeviceId)
+                    .civilCode(civilCode)
+                    .build();
+            exportList.add(dto);
+        }
+
+        return exportList;
+    }
+
+    /**
+     * 空洞扫描算法：获取下一个可用的紧凑最小正整数 ID (从 1 开始优先复用被释放的空洞)
+     */
+    public synchronized int getNextAvailableDeviceId(Set<Integer> reservedIds) {
+        List<Integer> ids = deviceMapper.selectAllIds();
+        Set<Integer> allUsed = new HashSet<>();
+        if (ids != null) {
+            allUsed.addAll(ids);
+        }
+        if (reservedIds != null) {
+            allUsed.addAll(reservedIds);
+        }
+        int candidate = 1;
+        while (allUsed.contains(candidate)) {
+            candidate++;
+        }
+        if (reservedIds != null) {
+            reservedIds.add(candidate);
+        }
+        return candidate;
     }
 
     @Override

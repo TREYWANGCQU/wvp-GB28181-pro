@@ -8,9 +8,14 @@
         </el-button>
         <span style="margin-left: 10px; color: #909399; font-size: 13px;">通过 UDP 239.255.255.250:3702 自动探测</span>
       </div>
-      <el-button type="success" :disabled="multipleSelection.length === 0" @click="batchImport">
-        批量导入选中 ({{ multipleSelection.length }})
-      </el-button>
+      <div style="display: flex; gap: 8px;">
+        <el-button type="primary" icon="el-icon-download" :disabled="multipleSelection.length === 0" :loading="exporting" @click="handleExportSelected">
+          批量导出选中 ({{ multipleSelection.length }})
+        </el-button>
+        <el-button type="success" icon="el-icon-plus" :disabled="multipleSelection.length === 0" @click="batchImport">
+          批量接入选中 ({{ multipleSelection.length }})
+        </el-button>
+      </div>
     </div>
 
     <!-- 发现结果列表 -->
@@ -42,7 +47,7 @@
 </template>
 
 <script>
-import { probeOnvifDevices, addOnvifDevice } from '@/api/onvif'
+import { probeOnvifDevices, addOnvifDevice, exportOnvifDevices } from '@/api/onvif'
 
 export default {
   name: 'DeviceDiscovery',
@@ -51,6 +56,7 @@ export default {
     return {
       scanning: false,
       importing: false,
+      exporting: false,
       foundDevices: [],
       multipleSelection: [],
       batchDialogVisible: false,
@@ -73,6 +79,43 @@ export default {
     },
     handleSelectionChange(val) {
       this.multipleSelection = val
+    },
+    handleExportSelected() {
+      if (this.multipleSelection.length === 0) {
+        this.$message.warning('请先勾选需要导出的设备')
+        return
+      }
+      this.exporting = true
+      const customDevices = this.multipleSelection.map(dev => ({
+        name: dev.name || ((dev.manufacturer || 'ONVIF') + '-' + dev.ip),
+        ip: dev.ip,
+        port: dev.port || 80,
+        username: 'admin',
+        password: '',
+        mediaServerId: '',
+        gbDeviceId: '',
+        civilCode: ''
+      }))
+
+      exportOnvifDevices({ customDevices })
+        .then(blob => {
+          const blobUrl = window.URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+          const link = document.createElement('a')
+          link.href = blobUrl
+          link.download = 'onvif_discovered_devices.xlsx'
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(blobUrl)
+          this.$message.success(`成功导出 ${customDevices.length} 台设备至 Excel`)
+        })
+        .catch(err => {
+          console.error(err)
+          this.$message.error('导出失败: ' + (err.message || err))
+        })
+        .finally(() => {
+          this.exporting = false
+        })
     },
     batchImport() {
       this.batchDialogVisible = true

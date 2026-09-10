@@ -18,6 +18,9 @@
       <el-button type="success" icon="el-icon-plus" @click="handleAddManual">手动添加</el-button>
       <el-button type="warning" icon="el-icon-radar" @click="handleOpenDiscovery">局域网搜寻</el-button>
       <el-button type="info" icon="el-icon-upload2" @click="importDialogVisible = true">批量导入</el-button>
+      <el-button type="primary" icon="el-icon-download" :disabled="multipleSelection.length === 0" :loading="exporting" @click="handleBatchExport">
+        批量导出 ({{ multipleSelection.length }})
+      </el-button>
     </div>
 
     <!-- 设备主表格 -->
@@ -28,8 +31,10 @@
       fit
       highlight-current-row
       style="width: 100%"
+      @selection-change="handleSelectionChange"
       @expand-change="handleExpandChange"
     >
+      <el-table-column type="selection" width="50" align="center" />
       <!-- 通道展开行 -->
       <el-table-column type="expand">
         <template slot-scope="props">
@@ -177,7 +182,7 @@
 </template>
 
 <script>
-import { getOnvifDeviceList, addOnvifDevice, updateOnvifDevice, deleteOnvifDevice, syncOnvifChannels, getOnvifChannels } from '@/api/onvif'
+import { getOnvifDeviceList, addOnvifDevice, updateOnvifDevice, deleteOnvifDevice, syncOnvifChannels, getOnvifChannels, exportOnvifDevices } from '@/api/onvif'
 import DeviceDiscovery from './deviceDiscovery.vue'
 import ImportDevice from './dialog/importDevice.vue'
 import ChannelPlayer from '@/views/channel/player.vue'
@@ -196,7 +201,9 @@ export default {
       listLoading: false,
       submitLoading: false,
       editSubmitLoading: false,
+      exporting: false,
       deviceList: [],
+      multipleSelection: [],
       total: 0,
       listQuery: { page: 1, count: 10, query: '', status: null },
       dialogAddVisible: false,
@@ -357,7 +364,37 @@ export default {
       }
     },
     handleSizeChange(val) { this.listQuery.count = val; this.fetchData() },
-    handleCurrentChange(val) { this.listQuery.page = val; this.fetchData() }
+    handleCurrentChange(val) { this.listQuery.page = val; this.fetchData() },
+    handleSelectionChange(val) {
+      this.multipleSelection = val
+    },
+    handleBatchExport() {
+      if (this.multipleSelection.length === 0) {
+        this.$message.warning('请先勾选需要导出的设备')
+        return
+      }
+      this.exporting = true
+      const deviceIds = this.multipleSelection.map(d => d.id)
+      exportOnvifDevices({ deviceIds })
+        .then(blob => {
+          const blobUrl = window.URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+          const link = document.createElement('a')
+          link.href = blobUrl
+          link.download = 'onvif_devices_export.xlsx'
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(blobUrl)
+          this.$message.success(`成功导出 ${deviceIds.length} 台设备`)
+        })
+        .catch(err => {
+          console.error(err)
+          this.$message.error('导出失败: ' + (err.message || err))
+        })
+        .finally(() => {
+          this.exporting = false
+        })
+    }
   }
 }
 </script>

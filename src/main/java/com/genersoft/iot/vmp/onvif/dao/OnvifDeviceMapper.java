@@ -12,13 +12,12 @@ import java.util.List;
 @Repository
 public interface OnvifDeviceMapper {
 
-    @Insert("INSERT INTO wvp_onvif_device (name, ip, port, username, password, device_service_url, " +
+    @Insert("INSERT INTO wvp_onvif_device (id, name, ip, port, username, password, device_service_url, " +
             "media_service_url, ptz_service_url, imaging_service_url, manufacturer, model, firmware_version, " +
             "serial_number, mac, clock_offset, status, media_server_id, create_time, update_time) " +
-            "VALUES (#{name}, #{ip}, #{port}, #{username}, #{password}, #{deviceServiceUrl}, " +
+            "VALUES (#{id}, #{name}, #{ip}, #{port}, #{username}, #{password}, #{deviceServiceUrl}, " +
             "#{mediaServiceUrl}, #{ptzServiceUrl}, #{imagingServiceUrl}, #{manufacturer}, #{model}, #{firmwareVersion}, " +
             "#{serialNumber}, #{mac}, #{clockOffset}, #{status}, #{mediaServerId}, #{createTime}, #{updateTime})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(OnvifDevice device);
 
     @Update("UPDATE wvp_onvif_device SET name=#{name}, ip=#{ip}, port=#{port}, username=#{username}, password=#{password}, " +
@@ -34,8 +33,17 @@ public interface OnvifDeviceMapper {
     @Select("SELECT * FROM wvp_onvif_device WHERE id=#{id}")
     OnvifDevice selectById(@Param("id") Integer id);
 
+    @Select("<script>SELECT * FROM wvp_onvif_device WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY id ASC</script>")
+    List<OnvifDevice> selectByIds(@Param("ids") List<Integer> ids);
+
     @Select("SELECT * FROM wvp_onvif_device WHERE ip=#{ip} AND port=#{port}")
     OnvifDevice selectByIpAndPort(@Param("ip") String ip, @Param("port") Integer port);
+
+    @Select("SELECT * FROM wvp_onvif_device WHERE ip=#{ip} ORDER BY id ASC")
+    List<OnvifDevice> selectListByIp(@Param("ip") String ip);
+
+    @Select("SELECT id FROM wvp_onvif_device ORDER BY id ASC")
+    List<Integer> selectAllIds();
 
     @SelectProvider(type = OnvifDeviceProvider.class, method = "queryListSql")
     List<OnvifDevice> selectList(@Param("query") String query, @Param("status") Integer status);
