@@ -64,8 +64,7 @@ RUN apk update && apk add --no-cache \
 WORKDIR /build
 # 拉取 ZLMediaKit 核心源码并更新子模块
 RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
-    cd ZLMediaKit && git submodule update --init --recursive --depth 1 && \
-    sed -i 's/!defined(ANDROID)/!defined(ANDROID) \&\& defined(__GLIBC__)/g' server/System.cpp src/Common/config.cpp 2>/dev/null || true
+    cd ZLMediaKit && git submodule update --init --recursive --depth 1
 
 WORKDIR /build/ZLMediaKit/build
 # 开启 WebRTC、关闭单元测试、采用 Release 构建并剥离符号 (注: -O2 降阶与 -j2 规避仿真器段错误与 OOM)

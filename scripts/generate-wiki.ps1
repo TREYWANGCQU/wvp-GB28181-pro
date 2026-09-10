@@ -38,7 +38,8 @@ if ([string]::IsNullOrWhiteSpace($WikiDir)) {
     $SiblingWiki = Join-Path $ProjectRoot "..\wvp-GB28181-pro.wiki"
     if (Test-Path $SiblingWiki) {
         $WikiDir = (Resolve-Path $SiblingWiki).Path
-    } else {
+    }
+    else {
         $WikiDir = Join-Path $ProjectRoot ".wiki"
     }
 }
@@ -61,80 +62,80 @@ Write-Host "============================================================" -Foreg
 # 2. 文档映射矩阵定义
 $DocMappings = @(
     @{
-        Source = "compile.md"
-        Target = "Compile-and-Dev-Guide.md"
-        Title  = "编译与开发指南"
-        Category = "开发与编译"
+        Source      = "compile.md"
+        Target      = "Compile-and-Dev-Guide.md"
+        Title       = "编译与开发指南"
+        Category    = "开发与编译"
         Description = "三机分工架构、Windows 11 开发环境、前端/后端编译及测试机离线部署全指南"
     },
     @{
-        Source = "docker-all-in-one-solution.md"
-        Target = "Docker-All-in-One-Solution.md"
-        Title  = "All-in-One 镜像合并打包架构方案"
-        Category = "Docker 全栈交付"
+        Source      = "docker-all-in-one-solution.md"
+        Target      = "Docker-All-in-One-Solution.md"
+        Title       = "All-in-One 镜像合并打包架构方案"
+        Category    = "Docker 全栈交付"
         Description = "WVP-PRO + ZLM + MySQL + Redis 四合一极速交付架构规范、硬约束与 WBS"
     },
     @{
-        Source = "docker-all-in-one-implementation.md"
-        Target = "Docker-All-in-One-Implementation.md"
-        Title  = "All-in-One 双机编译与 Hub 发布细则"
-        Category = "Docker 全栈交付"
+        Source      = "docker-all-in-one-implementation.md"
+        Target      = "Docker-All-in-One-Implementation.md"
+        Title       = "All-in-One 双机编译与 Hub 发布细则"
+        Category    = "Docker 全栈交付"
         Description = "跨平台多架构（amd64/arm64）构建、自愈 Entrypoint、Docker Hub 发布与全量运行指南"
     },
     @{
-        Source = "onvif-support-solution.md"
-        Target = "ONVIF-Support-Solution.md"
-        Title  = "ONVIF 协议支持技术实施方案"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-support-solution.md"
+        Target      = "ONVIF-Support-Solution.md"
+        Title       = "ONVIF 协议支持技术实施方案"
+        Category    = "ONVIF 协议工程"
         Description = "原生轻量自研 SOAP 引擎、WS-Discovery 探测、Profile 解析及 PTZ 云台控制技术体系"
     },
     @{
-        Source = "onvif-implementation/README.md"
-        Target = "ONVIF-Implementation-Guide.md"
-        Title  = "ONVIF 协议支持五阶段实施细节工程指南"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/README.md"
+        Target      = "ONVIF-Implementation-Guide.md"
+        Title       = "ONVIF 协议支持五阶段实施细节工程指南"
+        Category    = "ONVIF 协议工程"
         Description = "五阶段递进实施架构全景、类图结构、依赖约束与交付验收门禁"
     },
     @{
-        Source = "onvif-implementation/phase-1-soap-engine-and-discovery.md"
-        Target = "ONVIF-Phase-1-SOAP-Engine-and-Discovery.md"
-        Title  = "Phase 1: 通信底座与网络探测"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/phase-1-soap-engine-and-discovery.md"
+        Target      = "ONVIF-Phase-1-SOAP-Engine-and-Discovery.md"
+        Title       = "Phase 1: 通信底座与网络探测"
+        Category    = "ONVIF 协议工程"
         Description = "JDK 21 原生 HttpClient SOAP 客户端、时钟偏斜自动补偿与 WS-Discovery 探测器"
     },
     @{
-        Source = "onvif-implementation/phase-2-persistence-and-channel-sync.md"
-        Target = "ONVIF-Phase-2-Persistence-and-Channel-Sync.md"
-        Title  = "Phase 2: 持久化与通道同步"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/phase-2-persistence-and-channel-sync.md"
+        Target      = "ONVIF-Phase-2-Persistence-and-Channel-Sync.md"
+        Title       = "Phase 2: 持久化与通道同步"
+        Category    = "ONVIF 协议工程"
         Description = "增量 DDL 设计、OnvifDevice 实体模型、码流解析与 GBChannel (data_type=4) 挂接"
     },
     @{
-        Source = "onvif-implementation/phase-3-media-proxy-and-ptz-control.md"
-        Target = "ONVIF-Phase-3-Media-Proxy-and-PTZ-Control.md"
-        Title  = "Phase 3: 媒体调度与云台控制"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/phase-3-media-proxy-and-ptz-control.md"
+        Target      = "ONVIF-Phase-3-Media-Proxy-and-PTZ-Control.md"
+        Title       = "Phase 3: 媒体调度与云台控制"
+        Category    = "ONVIF 协议工程"
         Description = "ZLM StreamProxy 拉流接管、WebRTC/HTTP-FLV 分发、无人观看自动停流与 PTZ 归一化"
     },
     @{
-        Source = "onvif-implementation/phase-4-restful-api-and-web-ui.md"
-        Target = "ONVIF-Phase-4-RESTful-API-and-Web-UI.md"
-        Title  = "Phase 4: RESTful API 与 Web UI"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/phase-4-restful-api-and-web-ui.md"
+        Target      = "ONVIF-Phase-4-RESTful-API-and-Web-UI.md"
+        Title       = "Phase 4: RESTful API 与 Web UI"
+        Category    = "ONVIF 协议工程"
         Description = "控制器端点设计、Axios API 封装、Vue 2 设备主台账、自动探测抽屉与云台控制盘"
     },
     @{
-        Source = "onvif-implementation/phase-5-testing-verification-and-doc-sync.md"
-        Target = "ONVIF-Phase-5-Testing-Verification-and-Doc-Sync.md"
-        Title  = "Phase 5: 联调验证与交付基线"
-        Category = "ONVIF 协议工程"
+        Source      = "onvif-implementation/phase-5-testing-verification-and-doc-sync.md"
+        Target      = "ONVIF-Phase-5-Testing-Verification-and-Doc-Sync.md"
+        Title       = "Phase 5: 联调验证与交付基线"
+        Category    = "ONVIF 协议工程"
         Description = "JUnit 5 单元测试、海康/大华/宇视/雄迈多品牌 IPC 实测兼容性矩阵与验收 Checklist"
     },
     @{
-        Source = "debug/2026-09-09-onvif-debug-optimization-plan.md"
-        Target = "ONVIF-Debug-Optimization-Plan.md"
-        Title  = "ONVIF 接入调试与优化方案 (修订版)"
-        Category = "调试与运维"
+        Source      = "debug/2026-09-09-onvif-debug-optimization-plan.md"
+        Target      = "ONVIF-Debug-Optimization-Plan.md"
+        Title       = "ONVIF 接入调试与优化方案 (修订版)"
+        Category    = "调试与运维"
         Description = "时钟偏斜导致鉴权失败、WS-Discovery 端口占用、组播丢包及 Profile 解析空指针专项排查"
     }
 )
@@ -179,18 +180,18 @@ function Convert-WikiLinks {
 
     # 处理相对代码仓路径链接：如 [pom.xml](../../pom.xml#L63) 或 [src/...](../../../src/...)
     $Content = [regex]::Replace($Content, '\]\(\.\./\.\./(?:(?:\.\./)?)*([^)]+)\)', {
-        param($m)
-        $target = $m.Groups[1].Value
-        # 排除已是 Wiki 页面的情况
-        if ($target -match '^(?:Compile-|Docker-|ONVIF-)') {
-            return "]($target)"
-        }
-        # URL 编码中文路径（如 "数据库"）
-        $segments = $target -split '/'
-        $encodedSegments = $segments | ForEach-Object { [System.Uri]::EscapeDataString($_) }
-        $encodedTarget = $encodedSegments -join '/'
-        return "]($RepoBaseUrl/$encodedTarget)"
-    })
+            param($m)
+            $target = $m.Groups[1].Value
+            # 排除已是 Wiki 页面的情况
+            if ($target -match '^(?:Compile-|Docker-|ONVIF-)') {
+                return "]($target)"
+            }
+            # URL 编码中文路径（如 "数据库"）
+            $segments = $target -split '/'
+            $encodedSegments = $segments | ForEach-Object { [System.Uri]::EscapeDataString($_) }
+            $encodedTarget = $encodedSegments -join '/'
+            return "]($RepoBaseUrl/$encodedTarget)"
+        })
 
     return $Content
 }
@@ -285,7 +286,7 @@ Write-Host "[Wiki] 正在生成门户主页 Home.md..." -ForegroundColor Green
 $HomeContent = @"
 # WVP-PRO (GB28181 & ONVIF 双协议分支) 技术全景文档
 
-欢迎查阅 **WVP-PRO** 深度扩展分支的技术全景 Wiki。本项目在原生支持 **GB28181-2016 / 2022** 国标视频协议的基础上，**自研了高性能原生 ONVIF 协议支持**（WS-Discovery 局域网探测、时钟偏斜动态补偿 WS-Security、Profile 码流解析、ZLM 自动拉流接管与 PTZ 云台坐标归一化控制），并实现了 **Docker All-in-One 多架构一体化镜像极速交付**。
+欢迎查阅 **WVP-PRO** 深度扩展分支的技术全景 Wiki。本项目在原生支持 **GB28181-2016 / 2022** 国标视频协议的基础上，**自研了高性能原生 ONVIF 协议支持**（WS-Discovery 局域网探测、时钟偏斜动态补偿 WS-Security、Profile 码流解析、ZLM 自动拉流接管与 PTZ 云台坐标归一化控制），并实现了 **Docker All-in-One 多架构一体化镜像极速交付（约300MB）**。
 
 ---
 
@@ -411,8 +412,8 @@ docker run -d \
 ## 🤝 参与维护与反馈
 
 - **GitHub Issues**：[提交 Bug 报告或功能建议](https://github.com/TREYWANGCQU/wvp-GB28181-pro/issues)
-- **分支维护团队**：`y.wang@reaticle.com`
-- **原版开源项目**：感谢 648540858 等前辈对于 WVP-PRO 核心架构做出的卓越贡献！
+- **分支维护人**：`y.wang@reaticle.com`
+- **原版开源项目**：感谢 648540858 、夏楚等前辈对于 WVP-PRO 核心架构做出的卓越贡献！
 "@
 
 [System.IO.File]::WriteAllText($HomePath, $HomeContent.Trim(), [System.Text.UTF8Encoding]::new($false))
@@ -436,15 +437,19 @@ try {
             git push origin master
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "[Wiki] SUCCESS: Wiki 第一次同步提交已成功推送至 GitHub!" -ForegroundColor Green
-            } else {
+            }
+            else {
                 Write-Error "Wiki 推送失败，请检查网络或 SSH 权限。"
             }
-        } else {
+        }
+        else {
             Write-Host "[Wiki] 没有检测到需要提交的变更。" -ForegroundColor Gray
         }
-    } else {
+    }
+    else {
         Write-Host "[Wiki] 生成完成。若需提交推送，请添加 -Push 参数重新执行，或进入 $WikiDir 手动执行 git push。" -ForegroundColor Green
     }
-} finally {
+}
+finally {
     Set-Location $CurrentLocation
 }
