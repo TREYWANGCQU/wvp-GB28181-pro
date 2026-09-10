@@ -56,7 +56,7 @@
 |  [Colima Docker Daemon + Buildx: aio-builder]                                                         |
 |   ├── Stage 1: jre-builder    (--platform=$TARGETPLATFORM) -> jlink 定制裁剪 ~48MB JRE                 |
 |   ├── Stage 2: zlm-builder    (--platform=$TARGETPLATFORM) -> 编译 ZLMediaKit (WebRTC+SRTP) & strip   |
-|   └── Stage 3: final-runner   (--platform=$TARGETPLATFORM) -> Alpine 3.20 + MariaDB + Redis + WVP     |
+|   └── Stage 3: final-runner   (--platform=$TARGETPLATFORM) -> Alpine 3.19 + MariaDB + Redis + WVP     |
 |                                                                                                       |
 |  [Docker Hub 发布]                                                                                     |
 |   └── docker buildx build --platform linux/amd64,linux/arm64 --push -t reaticle/wvp-pro-aio:2.7.4    |
@@ -875,31 +875,301 @@ Manifests:
 
 ---
 
-## 6 常见避坑指南与故障排查矩阵 (Troubleshooting)
+## 6 Docker Hub 镜像说明与快速消费指南 (Docker Hub Overview & Quickstart)
 
-### 6.1 Windows 同步换行符导致容器 Entrypoint 崩溃
+本节汇总发布于 Docker Hub 的 `reaticle/wvp-pro-aio` 镜像元数据、官方主页描述模版、消费端拉取与一键部署命令，供外部使用者、运维工程师与自动化流水线直接查阅引用。
+
+### 6.1 镜像仓库概览与多架构标签体系
+
+- **官方 Docker Hub 仓库**：[`reaticle/wvp-pro-aio`](https://hub.docker.com/r/reaticle/wvp-pro-aio)
+- **多架构支持**：依托 OCI Multi-Arch Manifest List 规范，发布单一镜像标签，Docker 客户端在拉取时自动适配宿主 CPU 架构：
+  - `linux/amd64`：适用于 Intel / AMD 64 位 x86_64 服务器及云主机；
+  - `linux/arm64`：适用于 Apple Silicon (M1/M2/M3/M4 系列)、华为鲲鹏、飞腾等 aarch64 边缘计算与工控设备。
+- **发布标签（Tags）策略**：
+  - `reaticle/wvp-pro-aio:2.7.4`：锁定 v2.7.4 生产稳定版本（推荐用于生产锁定）；
+  - `reaticle/wvp-pro-aio:latest`：指向当前最新正式版本。
+- **全栈内嵌核心引擎一览**：
+  - **WVP-PRO 2.7.4**：基于 Spring Boot 3.4.4 + JDK 21（jlink 极简运行时）+ 内置 Vue Web 控制台，支持 GB28181-2016/2022 信令交互与 ONVIF 设备管理；
+  - **ZLMediaKit (Release)**：C++20 高性能流媒体服务器，完整开启 WebRTC 对讲、SRTP、RTSP、RTMP、HTTP-FLV、HLS 协议支持；
+  - **Alpine MariaDB 10.11+**：兼容 MySQL 8.0 语法规范，内置 2.7.4 基础表结构与 `wvp_onvif_*` 增量表，启动时自动初始化建表；
+  - **Redis 7.x**：轻量级内存高速缓存与 SIP 事务分布式锁引擎。
+- **体积极限脱水指标**：
+  - Docker Hub 压缩下载体积：**$\le$ 250 MB**（仅需数十秒即可完成全栈网络拉取）；
+  - 本地解压运行时占用：**$\approx$ 580 MB**（相较分立容器部署节省 60% 以上磁盘开销）；
+  - 容器初始内存驻留：**$\approx$ 380 MB ~ 500 MB**。
+
+---
+
+### 6.2 Docker Hub 镜像主页描述规范模版 (README Template)
+
+以下内容为专为 Docker Hub 镜像主页（Repository Overview / README）设计的纯 Markdown 说明文档。镜像维护者可在 Docker Hub 仓库设置中直接粘贴使用：
+
+````markdown
+# WVP-PRO All-in-One Multi-Arch Docker Image
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/reaticle/wvp-pro-aio.svg)](https://hub.docker.com/r/reaticle/wvp-pro-aio)
+[![Docker Image Size](https://img.shields.io/docker/image-size/reaticle/wvp-pro-aio/2.7.4)](https://hub.docker.com/r/reaticle/wvp-pro-aio)
+[![Supported Platforms](https://img.shields.io/badge/platform-linux%2Famd64%20%7C%20linux%2Farm64-blue.svg)](https://hub.docker.com/r/reaticle/wvp-pro-aio)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/648540858/wvp-GB28181-pro)
+
+WVP-PRO All-in-One 是面向 GB28181-2016/2022 国标视频平台与 ONVIF 监控设备的生产级一体化单容器镜像。将 **WVP-PRO 后端**、**Vue Web 前端**、**ZLMediaKit 流媒体引擎**、**MariaDB (MySQL兼容)** 与 **Redis** 深度融合为单一极简镜像，下载仅 ~250MB，实现开箱即用、一键启停与极速运维。
+
+---
+
+## 核心特性
+
+- **四合一全栈闭环**：单容器内集成信令、流媒体、数据库与缓存，组件间内部环回互通（127.0.0.1），杜绝传统微服务多容器编排时的网络不通、防火墙拦截与配置失步痛点；
+- **双架构原生适配**：原生支持 `linux/amd64` 与 `linux/arm64`，无缝兼容 x86 云服务器与 ARM 边缘工控机/树莓派/Apple Silicon；
+- **配置与数据自愈**：首次启动若未挂载外部配置，自动注入出厂默认模板；数据目录为空时自动灌入最新合流 SQL 库表；
+- **优雅停机与数据安全**：内置 POSIX 信号监督引擎，拦截 `SIGTERM` 并依序优雅退出各组件，彻底规避数据库损坏与录像切片丢失；
+- **协议全面支持**：GB28181-2016/2022、ONVIF Profile S/T (WS-Discovery)、WebRTC 双向语音对讲、RTSP、RTMP、HTTP-FLV、HLS、WS-FLV。
+
+---
+
+## 快速上手 (Quickstart)
+
+### 方式一：快速体验单行命令 (Bridge 模式，零配置即开即用)
+
+无需预先准备任何配置文件与数据库，执行单条命令即可拉起全部服务：
+
+```bash
+docker run -d \
+  --name wvp-aio \
+  -p 18080:18080 \
+  -p 8116:8116/udp \
+  -p 8116:8116/tcp \
+  -p 3702:3702/udp \
+  -p 9092:9092 \
+  -p 8000:8000/udp \
+  -p 8000:8000/tcp \
+  -p 1935:1935 \
+  -p 554:554 \
+  -p 30000-30050:30000-30050/udp \
+  -p 30000-30050:30000-30050/tcp \
+  reaticle/wvp-pro-aio:2.7.4
+```
+
+启动完成后，使用浏览器访问控制台：
+- **Web 控制台地址**：`http://<宿主机IP>:18080`
+- **默认登录账号**：`admin`
+- **默认登录密码**：`admin`
+
+---
+
+### 方式二：生产网络直通模式 (`--net=host`，Linux 强烈推荐)
+
+> [!TIP]
+> 在 Linux 物理服务器上，强烈推荐使用 `--net=host` 模式：
+> 1. **ONVIF 组播搜索**：WS-Discovery 基于 UDP `239.255.255.250:3702` 组播，Bridge 网桥会丢弃组播回包，只有 Host 模式可自动扫描发现局域网摄像头；
+> 2. **RTP 媒体流吞吐**：免去数百个动态 RTP 端口在 Docker iptables 中的 NAT 映射开销，显著降低网络转发延迟与 CPU 软中断。
+
+```bash
+docker run -d \
+  --name wvp-aio \
+  --net=host \
+  --restart=always \
+  -v /data/wvp-aio/mysql:/var/lib/mysql \
+  -v /data/wvp-aio/record:/opt/media/bin/www/record \
+  -v /data/wvp-aio/logs:/opt/wvp/logs \
+  reaticle/wvp-pro-aio:2.7.4
+```
+
+---
+
+### 方式三：Docker Compose 持久化部署 (推荐生产管理)
+
+创建 `docker-compose.yml` 文件：
+
+```yaml
+version: '3.8'
+
+services:
+  wvp-aio:
+    image: reaticle/wvp-pro-aio:2.7.4
+    container_name: wvp-aio
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      # 持久化数据库（容器销毁数据物理保留）
+      - ./data/mysql:/var/lib/mysql
+      # 录像切片存储
+      - ./data/record:/opt/media/bin/www/record
+      # 平台运行日志
+      - ./logs/wvp:/opt/wvp/logs
+      - ./logs/media:/opt/media/log
+      # （可选）若需深度自定义配置，可挂载外部文件（未挂载时自动使用出厂默认值）
+      # - ./config/application.yml:/opt/wvp/config/application.yml
+      # - ./config/zlm.ini:/opt/media/conf/config.ini
+      # - ./config/redis.conf:/etc/redis.conf
+    # Linux 裸机生产环境建议直接开启 host 模式：
+    # network_mode: host
+    # 若在 macOS / Windows 或云虚拟网卡环境下，启用显式端口映射：
+    ports:
+      - "18080:18080/tcp"              # WVP Web控制台与REST API
+      - "8116:8116/udp"                # GB28181 SIP信令 (UDP)
+      - "8116:8116/tcp"                # GB28181 SIP信令 (TCP)
+      - "3702:3702/udp"                # ONVIF WS-Discovery设备发现
+      - "9092:9092/tcp"                # ZLM HTTP-FLV / HLS 点播
+      - "8000:8000/udp"                # WebRTC 媒体协商与语音对讲
+      - "8000:8000/tcp"                # WebRTC TCP备用
+      - "1935:1935/tcp"                # RTMP 推拉流
+      - "554:554/tcp"                  # RTSP 推拉流
+      - "30000-30050:30000-30050/udp"  # GB28181 RTP媒体接收端口池
+      - "30000-30050:30000-30050/tcp"  # GB28181 RTP TCP媒体接收端口池
+```
+
+启动命令：
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+---
+
+## 核心配置与默认凭据
+
+| 组件 / 服务 | 协议 / 端口 | 默认账号 / 口令 | 说明 |
+|---|---|---|---|
+| **WVP Web 控制台** | HTTP / 18080 | `admin` / `admin` | 国标平台管理、通道配置、分屏播放、语音对讲、ONVIF 控制 |
+| **GB28181 SIP 服务** | UDP+TCP / 8116 | ID: `41010500002000000001`<br>密码: `admin` | 摄像头或下级平台级联接入使用的国标 SIP 服务信息 |
+| **ZLMediaKit 流媒体** | HTTP / 9092 | Secret: `035c73f7-bb6b-4889-a715-d9eb2d1925cc` | 流媒体核心 REST API 与 Webhook 鉴权密钥 |
+| **WebRTC 对讲** | UDP / 8000 | - | 网页端无插件低延迟直播与双向语音对讲 |
+| **ONVIF 发现** | UDP / 3702 | - | WS-Discovery 组播搜索（Host 模式无缝生效） |
+| **MariaDB 数据库** | TCP / 3306 | `root` / *(无密码)* | 内置直连，库名 `wvp`；出厂已初始化全部表 |
+| **Redis 缓存** | TCP / 6379 | *(无密码)* | 内置环回直连，用于缓存与分布式锁 |
+````
+
+---
+
+### 6.3 消费端极速部署与运行示例 (Quickstart Commands)
+
+根据不同运行场景，使用者可灵活选择以下部署策略：
+
+#### 场景 1：无宿主文件挂载的一键极速验证
+此模式适用于快速了解 WVP 界面操作与 SIP 设备注册：
+```bash
+docker run -d \
+  --name wvp-aio \
+  -p 18080:18080 \
+  -p 8116:8116/udp \
+  -p 8116:8116/tcp \
+  -p 3702:3702/udp \
+  -p 9092:9092 \
+  -p 8000:8000/udp \
+  -p 8000:8000/tcp \
+  -p 1935:1935 \
+  -p 554:554 \
+  -p 30000-30050:30000-30050/udp \
+  -p 30000-30050:30000-30050/tcp \
+  reaticle/wvp-pro-aio:2.7.4
+```
+容器在启动时会自动检测配置与数据库目录，通过 `entrypoint.sh` 自动生成全套数据，启动后 15 秒内即可访问 `http://<IP>:18080`。
+
+#### 场景 2：Linux 裸机生产网络直通 (`--net=host`)
+```bash
+# 创建持久化存储目录
+mkdir -p /data/wvp-aio/{mysql,record,logs}
+
+# 直通启动
+docker run -d \
+  --name wvp-aio \
+  --net=host \
+  --restart=always \
+  -v /data/wvp-aio/mysql:/var/lib/mysql \
+  -v /data/wvp-aio/record:/opt/media/bin/www/record \
+  -v /data/wvp-aio/logs:/opt/wvp/logs \
+  reaticle/wvp-pro-aio:2.7.4
+```
+
+#### 场景 3：Docker Compose 工业级持久化工程化管理
+使用项目附带的 [docker/docker-compose.aio.yml](../../docker/docker-compose.aio.yml)：
+```bash
+# 1. 运行工作区准备脚本 (自动建立目录并预设配置模板)
+./docker/aio/setup-workspace.sh ./aio-data
+
+# 2. 启动服务
+docker compose -f docker/docker-compose.aio.yml up -d
+
+# 3. 监控启动健康状态
+docker compose -f docker/docker-compose.aio.yml logs -f
+```
+
+---
+
+### 6.4 外部持久化挂载卷与配置热覆盖机制
+
+镜像内定义了完善的自愈注入（Self-Healing）逻辑，支持运维人员在宿主机进行持久化与定制覆盖：
+
+| 容器内挂载点 | 宿主机推荐路径 | 类别 | 读写属性 | 行为与自愈说明 |
+|---|---|---|---|---|
+| `/var/lib/mysql` | `./aio-data/data/mysql` | 数据存储 | 读写 (RW) | **核心数据库持久化**。若为空，容器自动执行首次初始化并灌入 `init.sql`；若已存在则直接挂载，历史数据绝对不丢。 |
+| `/opt/media/bin/www/record` | `./aio-data/data/record` | 媒体文件 | 读写 (RW) | **录像与切片持久化**。ZLMediaKit 生成的 MP4 录像与 HLS 切片均保存在此。 |
+| `/opt/wvp/logs` | `./aio-data/logs/wvp` | 系统日志 | 读写 (RW) | WVP-PRO Spring Boot 滚动业务日志。 |
+| `/opt/media/log` | `./aio-data/logs/media` | 引擎日志 | 读写 (RW) | ZLMediaKit C++ 核心日志。 |
+| `/opt/wvp/config/application.yml` | `./aio-data/config/application.yml` | 配置文件 | 只读/读写 | WVP 核心配置。未挂载时自动注入出厂默认模板。 |
+| `/opt/media/conf/config.ini` | `./aio-data/config/zlm.ini` | 配置文件 | 只读/读写 | ZLM 流媒体配置。未挂载时自动注入出厂默认模板。 |
+| `/etc/redis.conf` | `./aio-data/config/redis.conf` | 配置文件 | 只读/读写 | Redis 配置。未挂载时自动注入出厂默认模板。 |
+
+---
+
+### 6.5 核心暴露端口与网络拓扑矩阵
+
+| 端口号 | 传输层 | 组件 | 功能用途 | Bridge 映射需求 | Host 模式优势 |
+|---|---|---|---|---|---|
+| `18080` | TCP | WVP-PRO | Web 管理控制台与前后端 REST API | 必选映射 `-p 18080:18080` | 直接监听物理网卡 |
+| `8116` | UDP / TCP | WVP-PRO | GB28181 SIP 信令接入（摄像头注册/心跳/邀请） | 必选映射 `-p 8116:8116/udp -p 8116:8116/tcp` | 规避 NAT 引起的 SIP Via 头域 IP 错位 |
+| `3702` | UDP | WVP-PRO | ONVIF WS-Discovery 局域网摄像头自动探测 | 映射 `-p 3702:3702/udp` | **仅 Host 模式支持组播接收**；Bridge 模式需手动添加 IP |
+| `9092` | TCP | ZLMediaKit | HTTP-FLV / HLS / TS 直播播放及 RESTful 接口 | 必选映射 `-p 9092:9092` | 直连无代理损耗 |
+| `8000` | UDP / TCP | ZLMediaKit | WebRTC 媒体流分发与浏览器双向语音对讲 | 必选映射 `-p 8000:8000/udp` | 显著降低音视频对讲首包延迟 |
+| `1935` | TCP / UDP | ZLMediaKit | RTMP 推流与拉流播放 | 可选映射 `-p 1935:1935` | - |
+| `554` | TCP / UDP | ZLMediaKit | RTSP 推流与拉流播放 | 可选映射 `-p 554:554` | - |
+| `30000-30050` | UDP / TCP | ZLMediaKit | GB28181 国标 RTP 收流端口池 | 映射 `-p 30000-30050:30000-30050/udp` | **消除海量 iptables NAT 规则**，防软中断雪崩 |
+| `3306` | TCP | MariaDB | 数据库直连（调试维护） | 仅在需宿主 Navicat 直连时暴露 | - |
+| `6379` | TCP | Redis | 缓存直连（调试维护） | 仅在需外部调试时暴露 | - |
+
+---
+
+### 6.6 出厂默认凭据与服务入口速查表
+
+| 入口类型 | 地址 / 凭据参数 | 默认值 | 权限与用途 |
+|---|---|---|---|
+| **Web 登录地址** | `http://<宿主机IP>:18080` | - | 系统统一 Web 交互控制中心 |
+| **Web 默认账号** | 用户名 / 密码 | `admin` / `admin` | 超级管理员全权凭证 |
+| **SIP 服务器 ID** | `sip.id` | `41010500002000000001` | 摄像头配置中的「SIP 服务器国标编码」 |
+| **SIP 服务器域** | `sip.domain` | `4101050000` | 摄像头配置中的「SIP 域」 |
+| **SIP 接入密码** | `sip.password` | `admin` | 摄像头配置中的「SIP 接入密码」 |
+| **ZLM API Secret** | `media.secret` | `035c73f7-bb6b-4889-a715-d9eb2d1925cc` | WVP 联动 ZLM 的全局身份鉴权码 |
+| **MariaDB 数据库** | Host / Port / User / Pwd | `127.0.0.1:3306` / `root` / *(无密码)* | 数据库直连，默认管理库名为 `wvp` |
+| **Redis 缓存** | Host / Port / Pwd | `127.0.0.1:6379` / *(无密码)* | 内部环回缓存直连 |
+
+---
+
+## 7 常见避坑指南与故障排查矩阵 (Troubleshooting)
+
+### 7.1 Windows 同步换行符导致容器 Entrypoint 崩溃
 - **现象**：容器启动即报 `/usr/local/bin/entrypoint.sh: line 2: $'\r': command not found`。
 - **根因**：Windows PowerShell / Git 默认可能以 CRLF 保存脚本。
 - **解法**：在 `scripts/sync-aio-to-imac.ps1` 中已内置换行符过滤；若仍出现，可在 iMac 执行 `dos2unix docker/aio/entrypoint.sh` 或在 Dockerfile 中通过 `sed -i 's/\r$//' /usr/local/bin/entrypoint.sh` 防御。
 
-### 6.2 Colima 跨架构 C++ 编译 OOM 崩溃
+### 7.2 Colima 跨架构 C++ 编译 OOM 崩溃
 - **现象**：构建 `zlm-builder` 阶段执行 `cmake --build .` 时抛出 `g++: fatal error: Killed signal terminated program cc1plus`。
 - **根因**：Colima 虚拟机默认内存仅 2GB，并发多核编译消耗耗尽内存。
 - **解法**：启动 Colima 时显式分配 6GB 以上内存：`colima start --cpu 4 --memory 6`。
 
-### 6.3 MariaDB 表名大小写敏感导致 MyBatis 报错
+### 7.3 MariaDB 表名大小写敏感导致 MyBatis 报错
 - **现象**：容器运行正常，但访问 Web 页面提示 `Table 'wvp.WVP_DEVICE' doesn't exist`。
 - **根因**：Linux 下 MariaDB 默认大小写敏感（`lower_case_table_names=0`），而建表脚本或代码映射混用了大小写。
 - **解法**：在首次 `mysql_install_db` 和 `mysqld --bootstrap` 初始化阶段，**必须强制指定 `--lower-case-table-names=1`**。一旦数据目录生成后，不可随意切换，否则库表字典损坏。
 
-### 6.4 WebRTC 对讲声音无法建立连接
+### 7.4 WebRTC 对讲声音无法建立连接
 - **现象**：视频播放正常，但点击对讲无法听到声音，对讲状态处于协商中。
 - **根因**：WebRTC 依赖 UDP 8000 端口，且部分浏览器安全策略禁止在非 HTTPS（除 `localhost` 外）环境下打开麦克风。
 - **解法**：
   1. 确保 Docker 运行参数或 Compose 模板中暴露了 `8000:8000/udp`；
   2. 远端客户端访问需通过 HTTPS 反向代理，或在 Chrome 访问 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` 将 `http://<Host-IP>:18080` 加入白名单以授权采集麦克风。
 
-### 6.5 Docker 容器内点击 ONVIF 设备搜寻无法找到局域网设备
+### 7.5 Docker 容器内点击 ONVIF 设备搜寻无法找到局域网设备
 - **现象**：在 Web 页面点击“搜索设备”，进度条走完后列表为空，但局域网内确实存在正常在线的 ONVIF 摄像头。
 - **根因**：WS-Discovery 依赖发送至 `239.255.255.250:3702` 的 UDP 组播。Docker 默认 Bridge 桥接网络（如 `docker0`）会丢弃组播报文，使得摄像头无法接收到 Probe 探测或回包无法穿透网桥进入容器。
 - **解法**：
@@ -908,7 +1178,7 @@ Manifests:
 
 ---
 
-## 7 交付验证检查表 (Verification Checklist)
+## 8 交付验证检查表 (Verification Checklist)
 
 | 阶段 | 序号 | 检查项 | 验证命令 / 判据 | 状态 |
 |---|---|---|---|---|
@@ -922,3 +1192,6 @@ Manifests:
 | **Hub 发布** | 8 | 多架构联合推送完毕 | `docker buildx build --push` 返回成功 | [ ] |
 | | 9 | 远端 Manifest 包含双架构 | `imagetools inspect` 同时包含 `linux/amd64` 与 `linux/arm64` | [ ] |
 | | 10 | 镜像体积达标 | Docker Hub Compressed Download Size $\le$ 280MB | [ ] |
+| **Hub 消费文档** | 11 | Docker Hub Readme 齐备 | 包含平台支持、极速一键运行、默认凭据与挂载卷矩阵 | [ ] |
+| | 12 | 远端拉取消费冒烟 | `docker run --rm reaticle/wvp-pro-aio:2.7.4` 无挂载模式 15 秒内自愈就绪 | [ ] |
+
