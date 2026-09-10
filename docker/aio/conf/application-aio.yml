@@ -37,12 +37,16 @@ media:
   http-port: 9092
   # 容器内部闭环通信：ZLM -> WVP (闭环通信规避宿主防火墙阻断)
   hook-ip: 127.0.0.1
+  # [关键修正] 外部播放器拉流地址 IP（客户端浏览器拉流 IP）
+  sdp-ip: 192.168.254.X
+  # [关键修正] 外部播放器拉流地址 IP（客户端浏览器拉流 IP）
+  stream-ip: 192.168.254.X
   secret: AzmbJcNEu3wJUPImx72ckPSxCzQ27HEX
   auto-config: true
   rtp:
     enable: true
-    port-range: 30000,30050
-    send-port-range: 30000,30050
+    port-range: 30000,30500
+    send-port-range: 30000,30500
 
 logging:
   file:
