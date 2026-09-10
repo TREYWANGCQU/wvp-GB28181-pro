@@ -298,21 +298,39 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
         if (exist == null) {
             throw new ControllerException(ErrorCode.ERROR404.getCode(), "设备不存在");
         }
-        boolean needProbe = !exist.getIp().equals(device.getIp()) ||
-                !exist.getPort().equals(device.getPort()) ||
-                !exist.getUsername().equals(device.getUsername()) ||
-                !exist.getPassword().equals(device.getPassword());
+        // 1. 合并易变基础信息（如设备名称、绑定的流媒体服务ID）
+        if (device.getName() != null && !device.getName().trim().isEmpty()) {
+            exist.setName(device.getName().trim());
+        }
+        if (device.getMediaServerId() != null && !device.getMediaServerId().trim().isEmpty()) {
+            exist.setMediaServerId(device.getMediaServerId().trim());
+        }
+
+        // 2. 校验网络与认证连接要素变更
+        String newIp = (device.getIp() != null && !device.getIp().trim().isEmpty()) ? device.getIp().trim() : exist.getIp();
+        Integer newPort = (device.getPort() != null && device.getPort() > 0) ? device.getPort() : exist.getPort();
+        String newUsername = (device.getUsername() != null && !device.getUsername().trim().isEmpty()) ? device.getUsername().trim() : exist.getUsername();
+        String newPassword = device.getPassword() != null ? device.getPassword() : exist.getPassword();
+
+        boolean needProbe = !exist.getIp().equals(newIp) ||
+                !exist.getPort().equals(newPort) ||
+                !exist.getUsername().equals(newUsername) ||
+                !exist.getPassword().equals(newPassword);
+
+        exist.setIp(newIp);
+        exist.setPort(newPort);
+        exist.setUsername(newUsername);
+        exist.setPassword(newPassword);
 
         if (needProbe) {
-            if (device.getPort() == null || device.getPort() == 0) {
-                device.setPort(80);
-            }
-            device.setDeviceServiceUrl("http://" + device.getIp() + ":" + device.getPort() + "/onvif/device_service");
-            probeAndSyncMetadata(device);
+            exist.setDeviceServiceUrl("http://" + exist.getIp() + ":" + exist.getPort() + "/onvif/device_service");
+            probeAndSyncMetadata(exist);
         }
-        device.setUpdateTime(DateUtil.getNow());
-        deviceMapper.update(device);
-        return device;
+
+        // 3. 以融合后的 exist 对象落库，确保 device_service_url 及元数据不被冲刷为 null
+        exist.setUpdateTime(DateUtil.getNow());
+        deviceMapper.update(exist);
+        return exist;
     }
 
     @Override

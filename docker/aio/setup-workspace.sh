@@ -79,12 +79,16 @@ media:
   http-port: 9092
   # 容器内部闭环通信：ZLM -> WVP (闭环通信规避宿主防火墙阻断)
   hook-ip: 127.0.0.1
+  # [必配/按需修改] 国标设备点播推流的目标宿主机 IP（不可为 127.0.0.1，必须为设备可路由访问的宿主机 IP）
+  sdp-ip: 127.0.0.1
+  # [必配/按需修改] 客户端浏览器播放拉流的宿主机 IP（不可为 127.0.0.1，必须为客户端可访问的宿主机 IP）
+  stream-ip: 127.0.0.1
   secret: AzmbJcNEu3wJUPImx72ckPSxCzQ27HEX
   auto-config: true
   rtp:
     enable: true
-    port-range: 30000,30050
-    send-port-range: 30000,30050
+    port-range: 30000,30500
+    send-port-range: 30000,30500
 
 logging:
   file:
@@ -125,7 +129,7 @@ tcpPort=8000
 [rtp_proxy]
 # 国标 RTP 收流端口池
 port=10000
-port_range=30000-30050
+port_range=30000-30500
 
 [hook]
 enable=1
