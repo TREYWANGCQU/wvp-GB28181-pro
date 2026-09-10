@@ -107,6 +107,7 @@ RUN apk update && apk add --no-cache \
     libgcc && \
     cp /usr/share/zoneinfo/${TZ} /etc/localtime && \
     echo "${TZ}" > /etc/timezone && \
+    sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf 2>/dev/null || true && \
     rm -rf /var/cache/apk/* /var/lib/mysql/*
 
 # 2. 建立标准化目录布局

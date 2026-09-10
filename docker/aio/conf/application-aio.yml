@@ -37,7 +37,7 @@ media:
   http-port: 9092
   # 容器内部闭环通信：ZLM -> WVP (闭环通信规避宿主防火墙阻断)
   hook-ip: 127.0.0.1
-  secret: 035c73f7-bb6b-4889-a715-d9eb2d1925cc
+  secret: AzmbJcNEu3wJUPImx72ckPSxCzQ27HEX
   auto-config: true
   rtp:
     enable: true

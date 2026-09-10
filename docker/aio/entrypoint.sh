@@ -70,23 +70,28 @@ fi
 # -------------------------------------------------------------
 # 3. MariaDB 存储初始化与表名大小写合规建表
 # -------------------------------------------------------------
+# 解除 Alpine 默认的 skip-networking 限制，允许 TCP 网络连接
+if [ -f /etc/my.cnf.d/mariadb-server.cnf ]; then
+    sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf 2>/dev/null || true
+fi
+
 if [ ! -d "/var/lib/mysql/mysql" ]; then
     echo "[DB-Init] 检测到数据目录为空，执行 MariaDB 首次初始化 (--lower-case-table-names=1)..."
     chown -R mysql:mysql /var/lib/mysql
     mysql_install_db --user=mysql --datadir=/var/lib/mysql --lower-case-table-names=1 >/dev/null 2>&1
 
     echo "[DB-Init] 启动临时 mysqld 灌入初始化库表结构 (init.sql)..."
-    /usr/bin/mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap --lower-case-table-names=1 <<EOF
-FLUSH PRIVILEGES;
-CREATE DATABASE IF NOT EXISTS \`wvp\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('');
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED VIA mysql_native_password USING PASSWORD('');
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
-USE \`wvp\`;
-SOURCE /opt/wvp/init.sql;
-FLUSH PRIVILEGES;
-EOF
+    {
+        echo "FLUSH PRIVILEGES;"
+        echo "CREATE DATABASE IF NOT EXISTS \`wvp\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+        echo "ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('');"
+        echo "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;"
+        echo "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED VIA mysql_native_password USING PASSWORD('');"
+        echo "GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;"
+        echo "USE \`wvp\`;"
+        cat /opt/wvp/init.sql
+        echo "FLUSH PRIVILEGES;"
+    } | /usr/bin/mysqld --user=mysql --datadir=/var/lib/mysql --bootstrap --lower-case-table-names=1
     echo "[DB-Init] 数据库初始化完成并赋予本地无密直连权限。"
 fi
 
@@ -101,6 +106,7 @@ redis-server /etc/redis.conf --daemonize yes
 # 4.2 启动 MariaDB
 echo "[Startup] 2/4 启动 MariaDB 数据库引擎..."
 /usr/bin/mysqld_safe --user=mysql --datadir=/var/lib/mysql --lower-case-table-names=1 \
+    --skip-networking=OFF --bind-address=0.0.0.0 --port=3306 \
     --socket=/run/mysqld/mysqld.sock --log-error=/var/log/mysql/error.log >/dev/null 2>&1 &
 
 # 等待 MariaDB 套接字就绪 (最多等待 20 秒)
