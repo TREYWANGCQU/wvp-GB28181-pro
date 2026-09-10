@@ -615,17 +615,21 @@ RUN apk update && apk add --no-cache \
     openssl-dev \
     libsrtp-dev \
     pkgconf \
-    coreutils
+    coreutils && \
+    printf '#pragma once\n#include <stddef.h>\n#ifdef __cplusplus\nextern "C" {\n#endif\nstatic inline int backtrace(void **b, int s) { (void)b; (void)s; return 0; }\nstatic inline char **backtrace_symbols(void *const *b, int s) { (void)b; (void)s; return NULL; }\nstatic inline void backtrace_symbols_fd(void *const *b, int s, int f) { (void)b; (void)s; (void)f; }\n#ifdef __cplusplus\n}\n#endif\n' > /usr/include/execinfo.h
 
 WORKDIR /build
 # 拉取 ZLMediaKit 核心源码并更新子模块
 RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
-    cd ZLMediaKit && git submodule update --init --recursive --depth 1
+    cd ZLMediaKit && git submodule update --init --recursive --depth 1 && \
+    sed -i 's/!defined(ANDROID)/!defined(ANDROID) \&\& defined(__GLIBC__)/g' server/System.cpp src/Common/config.cpp 2>/dev/null || true
 
 WORKDIR /build/ZLMediaKit/build
-# 开启 WebRTC、关闭无用测试项、采用 Release 构建 (限并发 -j2 规避 Colima OOM 崩溃)
+# 开启 WebRTC、关闭无用测试项、采用 Release 构建 (注: -O2 降阶与 -j2 规避仿真器段错误与 OOM)
 RUN cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS="-O2" \
+    -DCMAKE_CXX_FLAGS="-O2" \
     -DENABLE_WEBRTC=ON \
     -DENABLE_TESTS=OFF \
     -DENABLE_API=ON \
@@ -716,11 +720,17 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 为多架构构建分配充足的资源（建议 CPU $\ge$ 4 核，内存 $\ge$ 6GB，避免 C++ 编译触发 OOM 崩溃）：
 
 ```bash
-# 启动 Colima
-colima start --cpu 4 --memory 6 --disk 50
+# 1. 停止并删除旧 QEMU 实例
+colima stop
+colima delete -f
+# 2. 启用 VZ 虚拟化与 Rosetta 2 重新启动 (分配 6G 内存与 4 核 CPU)
+colima start --cpu 4 --memory 6 --disk 50 --vm-type=vz --vz-rosetta
 
 # 确认 Docker 客户端连接正常
 docker info
+# 3. 注入所有跨架构解释器（重点激活 linux/amd64）
+docker run --privileged --rm tonistiigi/binfmt --uninstall "qemu-*"
+docker run --privileged --rm tonistiigi/binfmt --install amd64
 ```
 
 ### 5.2 步骤二：准备 Docker Buildx 多架构构建器
@@ -729,10 +739,16 @@ Docker 默认的构建实例无法跨平台输出多架构镜像列表，必须�
 
 ```bash
 # 1. 检查已有的 buildx 实例
+
 docker buildx ls
 
 # 2. 创建并切换至专用的 wvp-aio-builder 实例
+
 docker buildx create --name wvp-aio-builder --driver docker-container --use
+
+# 后续可直接使用切换为当前 builder：
+
+docker buildx use wvp-aio-builder
 
 # 3. 初始化并拉取 QEMU 跨平台仿真器
 docker buildx inspect --bootstrap

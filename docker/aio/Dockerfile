@@ -58,17 +58,21 @@ RUN apk update && apk add --no-cache \
     openssl-dev \
     libsrtp-dev \
     pkgconf \
-    coreutils
+    coreutils && \
+    printf '#pragma once\n#include <stddef.h>\n#ifdef __cplusplus\nextern "C" {\n#endif\nstatic inline int backtrace(void **b, int s) { (void)b; (void)s; return 0; }\nstatic inline char **backtrace_symbols(void *const *b, int s) { (void)b; (void)s; return NULL; }\nstatic inline void backtrace_symbols_fd(void *const *b, int s, int f) { (void)b; (void)s; (void)f; }\n#ifdef __cplusplus\n}\n#endif\n' > /usr/include/execinfo.h
 
 WORKDIR /build
 # 拉取 ZLMediaKit 核心源码并更新子模块
 RUN git clone --depth 1 https://gitee.com/xia-chu/ZLMediaKit.git && \
-    cd ZLMediaKit && git submodule update --init --recursive --depth 1
+    cd ZLMediaKit && git submodule update --init --recursive --depth 1 && \
+    sed -i 's/!defined(ANDROID)/!defined(ANDROID) \&\& defined(__GLIBC__)/g' server/System.cpp src/Common/config.cpp 2>/dev/null || true
 
 WORKDIR /build/ZLMediaKit/build
-# 开启 WebRTC、关闭单元测试、采用 Release 构建并剥离符号 (限并发 -j2 规避 Colima OOM 崩溃)
+# 开启 WebRTC、关闭单元测试、采用 Release 构建并剥离符号 (注: -O2 降阶与 -j2 规避仿真器段错误与 OOM)
 RUN cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS="-O2" \
+    -DCMAKE_CXX_FLAGS="-O2" \
     -DENABLE_WEBRTC=ON \
     -DENABLE_TESTS=OFF \
     -DENABLE_API=ON \
