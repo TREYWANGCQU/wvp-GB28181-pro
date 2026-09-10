@@ -482,6 +482,9 @@ public interface PlatformChannelMapper {
             " </script>"})
     void updateCustomChannel(PlatformChannel channel);
 
+    @Update("UPDATE wvp_platform_channel SET custom_device_id = #{customDeviceId}, custom_name = #{customName} WHERE id = #{id} AND platform_id = #{platformId}")
+    int updateCustomDeviceIdAndName(@Param("id") int id, @Param("platformId") int platformId, @Param("customDeviceId") String customDeviceId, @Param("customName") String customName);
+
 
     @Select("<script>" +
             " select " +

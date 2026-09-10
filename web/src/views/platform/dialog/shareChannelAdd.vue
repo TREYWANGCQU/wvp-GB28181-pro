@@ -57,6 +57,8 @@
           <el-button v-if="hasShare ==='true'" size="mini" :loading="removeByOnvifDeviceLoading" @click="removeByOnvifDevice()">按ONVIF设备移除</el-button>
           <el-button v-if="hasShare !=='true'" size="mini" :loading="addAllLoading" @click="addAll()">全部添加</el-button>
           <el-button v-if="hasShare ==='true'" size="mini" :loading="removeAllLoading" @click="removeAll()">全部移除</el-button>
+          <el-button v-if="hasShare ==='true'" size="mini" icon="el-icon-download" :loading="exportLoading" @click="handleExport()">导出编码映射</el-button>
+          <el-button v-if="hasShare ==='true'" size="mini" type="primary" icon="el-icon-upload2" @click="handleImport()">批量导入修改</el-button>
         </el-form-item>
         <el-form-item style="float: right;">
           <el-button icon="el-icon-refresh-right" circle @click="getChannelList()" />
@@ -122,6 +124,7 @@
       />
       <gbDeviceSelect ref="gbDeviceSelect" />
       <onvifDeviceSelect ref="onvifDeviceSelect" />
+      <importCustomChannel :visible.sync="importDialogVisible" :platform-id="platformId" @refresh="getChannelList" />
     </div>
   </div>
 </template>
@@ -130,10 +133,12 @@
 
 import gbDeviceSelect from '../../dialog/GbDeviceSelect.vue'
 import onvifDeviceSelect from '../../dialog/OnvifDeviceSelect.vue'
+import importCustomChannel from './importCustomChannel.vue'
+import { exportCustomChannel } from '@/api/platform'
 
 export default {
   name: 'ShareChannelAdd',
-  components: { gbDeviceSelect, onvifDeviceSelect },
+  components: { gbDeviceSelect, onvifDeviceSelect, importCustomChannel },
   props: ['platformId'],
   data() {
     return {
@@ -156,7 +161,9 @@ export default {
       removeLoading: false,
       removeByDeviceLoading: false,
       removeByOnvifDeviceLoading: false,
-      removeAllLoading: false
+      removeAllLoading: false,
+      exportLoading: false,
+      importDialogVisible: false
     }
   },
 
@@ -490,6 +497,32 @@ export default {
     },
     refresh: function() {
       this.initData()
+    },
+    handleExport: function() {
+      if (!this.platformId) {
+        this.$message.warning('缺少平台ID')
+        return
+      }
+      this.exportLoading = true
+      exportCustomChannel(this.platformId)
+        .then(response => {
+          const blob = new Blob([response.data || response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+          const link = document.createElement('a')
+          link.href = window.URL.createObjectURL(blob)
+          link.download = `级联平台_${this.platformId}_通道编码映射表.xlsx`
+          link.click()
+          window.URL.revokeObjectURL(link.href)
+          this.$message.success('导出映射表成功')
+        })
+        .catch(err => {
+          this.$message.error('导出映射表失败: ' + (err.message || err))
+        })
+        .finally(() => {
+          this.exportLoading = false
+        })
+    },
+    handleImport: function() {
+      this.importDialogVisible = true
     }
   }
 }

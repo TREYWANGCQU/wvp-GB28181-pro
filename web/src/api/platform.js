@@ -140,3 +140,23 @@ export function updateCustomChannel(data) {
   })
 }
 
+// 导出级联通道编码映射表
+export function exportCustomChannel(platformId) {
+  return request({
+    method: 'get',
+    url: `/api/platform/channel/custom/export`,
+    params: { platformId },
+    responseType: 'blob'
+  })
+}
+
+// 批量导入级联通道自定义国标编码
+export function importCustomChannel(data) {
+  return request({
+    method: 'post',
+    url: `/api/platform/channel/custom/import`,
+    data: data,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+

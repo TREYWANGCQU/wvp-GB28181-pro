@@ -917,7 +917,7 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
                             // 获取通道编号
                             CommonGBChannel commonGBChannel = queryChannelByPlatformIdAndChannelId(platform.getId(), mobilePosition.getChannelId());
                             sipCommanderForPlatform.sendNotifyMobilePosition(platform, gpsMsgInfo, commonGBChannel,
-                                    subscribe);
+                                     subscribe);
                         } catch (InvalidArgumentException | ParseException | NoSuchFieldException | SipException |
                                  IllegalAccessException e) {
                             log.error("[命令发送失败] 国标级联 Catalog通知: {}", e.getMessage());
@@ -926,5 +926,110 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
                 });
             }
         }
+    }
+
+    @Override
+    public List<PlatformChannelExcelDto> getExportChannelList(Integer platformId) {
+        Assert.notNull(platformId, "上级平台ID不能为空");
+        List<PlatformChannel> channelList = platformChannelMapper.queryForPlatformForWebList(platformId, null, null, null, true);
+        List<PlatformChannelExcelDto> exportList = new ArrayList<>();
+        if (channelList != null && !channelList.isEmpty()) {
+            for (PlatformChannel channel : channelList) {
+                exportList.add(PlatformChannelExcelDto.builder()
+                        .id(channel.getId())
+                        .name(channel.getGbName())
+                        .gbDeviceId(channel.getGbDeviceId())
+                        .manufacturer(channel.getGbManufacturer())
+                        .customDeviceId(channel.getCustomDeviceId())
+                        .customName(channel.getCustomName())
+                        .build());
+            }
+        }
+        return exportList;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PlatformChannelImportResult importChannelCustom(Integer platformId, List<PlatformChannelExcelDto> importList) {
+        Assert.notNull(platformId, "上级平台ID不能为空");
+        Platform platform = platformMapper.query(platformId);
+        Assert.notNull(platform, "上级平台不存在");
+
+        if (importList == null || importList.isEmpty()) {
+            return PlatformChannelImportResult.builder().total(0).success(0).failure(0).build();
+        }
+
+        int total = importList.size();
+        int success = 0;
+        int failure = 0;
+        List<String> errorMessages = new ArrayList<>();
+        Set<String> batchCustomIdSet = new HashSet<>();
+
+        // 20位纯数字强正则校验
+        java.util.regex.Pattern gbIdPattern = java.util.regex.Pattern.compile("^[0-9]{20}$");
+
+        for (int i = 0; i < importList.size(); i++) {
+            PlatformChannelExcelDto item = importList.get(i);
+            int rowNum = i + 2; // Excel 数据行（行1为表头）
+
+            if (item == null || item.getId() == null || item.getId() <= 0) {
+                failure++;
+                errorMessages.add("第 " + rowNum + " 行: 级联通道映射ID缺失或非法，无法定位数据");
+                continue;
+            }
+
+            String customDeviceId = item.getCustomDeviceId();
+            if (customDeviceId != null) {
+                customDeviceId = customDeviceId.trim();
+                if (customDeviceId.isEmpty()) {
+                    customDeviceId = null;
+                }
+            }
+
+            String customName = item.getCustomName();
+            if (customName != null) {
+                customName = customName.trim();
+                if (customName.isEmpty()) {
+                    customName = null;
+                }
+            }
+
+            if (customDeviceId != null) {
+                if (!gbIdPattern.matcher(customDeviceId).matches()) {
+                    failure++;
+                    errorMessages.add("第 " + rowNum + " 行: 自定义国标编号 [" + customDeviceId + "] 格式非法，必须严格为 20 位纯数字");
+                    continue;
+                }
+                if (batchCustomIdSet.contains(customDeviceId)) {
+                    failure++;
+                    errorMessages.add("第 " + rowNum + " 行: 自定义国标编号 [" + customDeviceId + "] 在当前导入文件中重复出现");
+                    continue;
+                }
+                batchCustomIdSet.add(customDeviceId);
+            }
+
+            try {
+                int updated = platformChannelMapper.updateCustomDeviceIdAndName(item.getId(), platformId, customDeviceId, customName);
+                if (updated > 0) {
+                    success++;
+                } else {
+                    failure++;
+                    errorMessages.add("第 " + rowNum + " 行: 更新失败，未匹配到关联记录或不属于该平台 (ID: " + item.getId() + ")");
+                }
+            } catch (Exception e) {
+                failure++;
+                log.warn("[国标级联-批量导入通道编码] 第 {} 行入库异常: {}", rowNum, e.getMessage());
+                errorMessages.add("第 " + rowNum + " 行: 数据库更新失败 (" + e.getMessage() + ")");
+            }
+        }
+
+        log.info("[国标级联-批量导入通道编码] 平台: {}, 总数: {}, 成功: {}, 失败: {}", platform.getServerGBId(), total, success, failure);
+
+        return PlatformChannelImportResult.builder()
+                .total(total)
+                .success(success)
+                .failure(failure)
+                .errorMessages(errorMessages)
+                .build();
     }
 }

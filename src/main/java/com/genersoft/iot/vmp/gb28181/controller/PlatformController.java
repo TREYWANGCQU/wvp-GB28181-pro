@@ -23,6 +23,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletResponse;
+import com.alibaba.excel.EasyExcel;
+import com.genersoft.iot.vmp.gb28181.bean.PlatformChannelExcelDto;
+import com.genersoft.iot.vmp.gb28181.bean.PlatformChannelImportResult;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * 级联平台管理
@@ -282,5 +290,49 @@ public class PlatformController {
     public void updateCustomChannel(@RequestBody PlatformChannel channel) {
         Assert.isTrue(channel.getId() > 0, "共享通道ID必须存在");
         platformChannelService.updateCustomChannel(channel);
+    }
+
+    @Operation(summary = "导出级联平台的通道编码映射表", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @Parameter(name = "platformId", description = "上级平台ID", required = true)
+    @GetMapping("/channel/custom/export")
+    public void exportCustomChannel(@RequestParam Integer platformId, HttpServletResponse response) {
+        Assert.notNull(platformId, "平台ID不可为空");
+        try {
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setCharacterEncoding("utf-8");
+            String fileName = URLEncoder.encode("cascade_channels_" + platformId, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+            response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
+
+            List<PlatformChannelExcelDto> exportList = platformChannelService.getExportChannelList(platformId);
+            EasyExcel.write(response.getOutputStream(), PlatformChannelExcelDto.class)
+                    .sheet("级联通道映射表")
+                    .doWrite(exportList);
+        } catch (Exception e) {
+            log.error("[国标级联] 导出通道编码映射表失败: {}", e.getMessage(), e);
+            throw new ControllerException(ErrorCode.ERROR100.getCode(), "导出通道编码映射表失败: " + e.getMessage());
+        }
+    }
+
+    @Operation(summary = "批量导入级联通道自定义国标编码", security = @SecurityRequirement(name = JwtUtils.HEADER))
+    @Parameter(name = "platformId", description = "上级平台ID", required = true)
+    @PostMapping("/channel/custom/import")
+    @ResponseBody
+    public WVPResult<PlatformChannelImportResult> importCustomChannel(@RequestParam("file") MultipartFile file,
+                                                                     @RequestParam("platformId") Integer platformId) {
+        Assert.notNull(platformId, "平台ID不可为空");
+        if (file == null || file.isEmpty()) {
+            throw new ControllerException(ErrorCode.ERROR400.getCode(), "上传文件不能为空");
+        }
+        try {
+            List<PlatformChannelExcelDto> importList = EasyExcel.read(file.getInputStream())
+                    .head(PlatformChannelExcelDto.class)
+                    .sheet()
+                    .doReadSync();
+            PlatformChannelImportResult result = platformChannelService.importChannelCustom(platformId, importList);
+            return WVPResult.success(result);
+        } catch (Exception e) {
+            log.error("[国标级联] 解析导入通道编码失败: {}", e.getMessage(), e);
+            throw new ControllerException(ErrorCode.ERROR100.getCode(), "解析导入通道编码失败: " + e.getMessage());
+        }
     }
 }

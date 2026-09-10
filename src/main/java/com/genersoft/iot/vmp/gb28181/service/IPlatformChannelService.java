@@ -56,4 +56,8 @@ public interface IPlatformChannelService {
     List<Platform> queryByPlatformBySharChannelId(String gbId);
 
     void notifyMobilePosition(List<MobilePosition> handlerCatchDataList);
+
+    List<PlatformChannelExcelDto> getExportChannelList(Integer platformId);
+
+    PlatformChannelImportResult importChannelCustom(Integer platformId, List<PlatformChannelExcelDto> importList);
 }
