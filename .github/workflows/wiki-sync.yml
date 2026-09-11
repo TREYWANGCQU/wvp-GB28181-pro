@@ -35,8 +35,8 @@ jobs:
         run: |
           echo "=== 正在同步 doc/wiki_staging 至 Wiki 工作区 ==="
           # 清理除 .git 之外的历史残留页面，实现精确镜像同步
-          find wiki-repo -maxdepth 1 -not -name '.git' -not -name '.' -exec rm -rf {} +
-          cp -r main-repo/doc/wiki_staging/* wiki-repo/
+          find wiki-repo -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+          cp -r main-repo/doc/wiki_staging/. wiki-repo/
           ls -la wiki-repo/
 
       - name: Commit and Push Changes to Wiki
