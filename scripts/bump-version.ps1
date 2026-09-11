@@ -38,7 +38,7 @@ if (Test-Path $PomPath) {
     $pomRegex = '(<artifactId>wvp-pro</artifactId>\s*<version>)([^<]+)(</version>)'
     if ($pomContent -match $pomRegex) {
         $oldVersion = $Matches[2]
-        $pomContent = [System.Text.RegularExpressions.Regex]::Replace($pomContent, $pomRegex, "${1}$NewVersion${3}")
+        $pomContent = [System.Text.RegularExpressions.Regex]::Replace($pomContent, $pomRegex, "`$1$NewVersion`$3")
         [System.IO.File]::WriteAllText($PomPath, $pomContent, [System.Text.Encoding]::UTF8)
         Write-Host "  -> pom.xml 更新成功: $oldVersion => $NewVersion" -ForegroundColor Green
     } else {
