@@ -208,3 +208,167 @@ mindmap
    - 配置 `WIKI_SYNC_TOKEN` Secret，完成第一次端到端自动化 CI 推送。
 4. **第四阶段：在线验收与长效归档（0.5人天）**
    - 检查在线 GitHub Wiki 展示效果，修正可能遗漏的边缘锚点，正式归档交付。
+
+---
+
+## 7. 运维与配置实战操作手册 (Setup & Operation Runbook)
+
+### 7.1 为什么必须配置 `WIKI_SYNC_TOKEN`？（必要性原理解析）
+在标准的 GitHub Actions 中，系统默认提供了一个动态生成的临时凭证 `secrets.GITHUB_TOKEN`。然而在涉及 Wiki 自动化时，存在以下**平台级安全刚性约束**：
+1. **Wiki 仓库的独立性**：GitHub Wiki 并非主仓库的一个子目录或普通分支，而是物理上完全隔离的独立 Git 存储库（`https://github.com/<owner>/<repo>.wiki.git`）；
+2. **权限越界阻隔（Scope Boundary）**：GitHub 出于防止越权写入的安全策略，`GITHUB_TOKEN` 的默认权限被严格限制在主仓库自身内，**无权对同名 `.wiki.git` 执行推送**。若直接使用 `GITHUB_TOKEN`，在 `git push` 步骤必然返回 `403 The requested URL returned error: 403 Forbidden`；
+3. **解决方案**：必须在 GitHub 个人设置中生成一个具备 `repo` 完整作用域的 Personal Access Token (PAT)，并将其注入主仓库的 Secrets（命名为 `WIKI_SYNC_TOKEN`）。CI 通过该 Token 进行身份认证，即可合法向 Wiki 仓库推送。
+
+---
+
+### 7.2 `WIKI_SYNC_TOKEN` 申请与配置四步法
+
+#### 第一步：进入个人 Developer Settings
+1. 登录 GitHub，点击右上角个人头像，选择 **Settings**（用户全局设置，非仓库设置）；
+2. 页面拉至左下角，点击 **Developer settings**；
+3. 选择 **Personal access tokens** -> **Tokens (classic)**（推荐 Classic Token，兼容性最广）。
+
+#### 第二步：生成专属 Token
+1. 点击右上角 **Generate new token** -> **Generate new token (classic)**；
+2. **Note**（备注名）：填入可明确识别的名称，例如：`WVP-PRO Wiki Sync Deploy Token`；
+3. **Expiration**（有效期）：建议根据安全合规策略设置为 `90 days`、`1 year` 或 `No expiration`（团队公开开源项目可按需选定）；
+4. **Select scopes**（勾选作用域）：
+   - 勾选顶级权限 **`repo`**（Full control of private repositories / public repositories）；
+   - *说明*：勾选 `repo` 会自动包含其下的 `repo:status`、`repo_deployment`、`public_repo` 等全部子项，这是获得 Wiki 读写权限的必要条件。
+5. 点击页面底部绿色的 **Generate token** 按钮。
+
+#### 第三步：安全复制 Token
+- 页面将显示生成的 Token 字符串（形如 `ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）；
+- **注意**：该字符串离开此页面后将无法再次查看，请立即点击复制图标复制到剪贴板。
+
+#### 第四步：在代码仓库中配置 Secret
+1. 打开当前代码仓库页面（如 `TREYWANGCQU/wvp-GB28181-pro`）；
+2. 依次点击顶部导航 **Settings** -> 左侧边栏 **Secrets and variables** -> **Actions**；
+3. 点击绿色按钮 **New repository secret**；
+4. **Name** 填入：`WIKI_SYNC_TOKEN`（必须完全一致，与 `.github/workflows/wiki-sync.yml` 中的引用名称严格匹配）；
+5. **Secret** 粘贴刚才复制的 Token 字符串；
+6. 点击 **Add secret** 保存。
+
+---
+
+### 7.3 首次启用 GitHub Wiki 的避坑指南（关键步骤）
+
+> [!CAUTION]
+> **避坑警告：GitHub 默认不会物理初始化 `.wiki.git` 仓库！**
+> 
+> 若一个 GitHub 仓库从未使用过 Wiki，即使已配置了 Token 和 CI 工作流，CI 在执行 `actions/checkout` 克隆 `.wiki` 仓库时仍会报错：
+> `fatal: repository 'https://github.com/.../....wiki.git/' not found` (404)。
+
+#### 首次激活操作步骤：
+1. 打开代码仓库主页，点击顶部导航栏中的 **Wiki** 标签页；
+2. 页面会显示欢迎界面，点击中间的绿色按钮 **Create the first page**；
+3. 无需输入复杂内容，输入标题 `Home`，内容随意输入一个字母（如 `init`）；
+4. 点击右下角 **Save Page**；
+5. **生效标志**：页面成功保存后，GitHub 底层才会真正建立 `https://github.com/<owner>/<repo>.wiki.git` 裸仓库。此后 CI 便可正常检出与推送。后续 CI 的第一次同步会自动将这个临时页面覆盖为标准主页。
+
+---
+
+### 7.4 日常开发维护操作心智模型 (Developer Routine)
+
+日常研发过程中，文档与代码同步发布的极简流转如下：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as 开发者
+    participant Local as 本地 Antigravity / IDE
+    participant Staging as 受控暂存区 (doc/wiki_staging/)
+    participant Master as 主代码仓 (master 分支)
+    participant CI as GitHub Actions (wiki-sync.yml)
+    participant Wiki as GitHub Wiki 远端门户
+
+    Dev->>Local: 撰写/更新 doc/reaticle_docs/ 下的技术文档
+    Dev->>Local: 输入 /wiki-curator 或运行 scripts/build-wiki-staging.ps1
+    Local->>Staging: 自动解析元数据、扁平化重命名、生成 _Sidebar 与 Home.md
+    Dev->>Local: 执行 git status 检查明文 Diff
+    Dev->>Master: git add doc/wiki_staging/ && git commit && git push
+    Master->>CI: Webhook 自动触发构建
+    CI->>Wiki: 检出 Wiki 仓库，镜像比对并自动 Push
+    Wiki-->>Dev: 浏览器访问 Wiki 即可查阅最新发布的知识库
+```
+
+---
+
+## 8. 全局通用 AI 编目技能 (wiki-curator) 使用指南
+
+为了将 Wiki 编目能力固化为可复用的工程资产，本项目已在用户全局配置中装配了专用的知识库编目技能：[wiki-curator/SKILL.md](file:///c:/Users/Reaticle/.gemini/config/skills/wiki-curator/SKILL.md)。无论是维护本项目，还是迁移到任何全新的 Git 代码仓库，均可直接唤醒此技能。
+
+### 8.1 技能定位与核心特性
+1. **全局可用，跨仓零迁移成本**：安装在全局技能库（`~/.gemini/config/skills/wiki-curator/`），在任何工作区、任何代码仓库均可随时调用；
+2. **四阶段自适应状态机 (Adaptive State Machine)**：技能能够自动识别当前仓库的成熟度（是全新仓库还是已配置仓库），智能流转在“源路径确认”、“CI 脚手架自动注入”、“首次凭据引导”与“常规秒级增量更新”之间；
+3. **安全受控（零越权 Push）**：技能始终恪守只在本地工作区生成受控暂存区 `doc/wiki_staging/` 的安全约束，不进行静默的远程 Git 推送，所有变更对开发者完全可见、可审、可追溯。
+
+---
+
+### 8.2 唤醒方式与交互协议
+
+在 Antigravity IDE 或任意支持 Agent 技能的对话界面中，可通过以下任一方式唤醒：
+
+- **斜杠命令唤醒（推荐，最快捷）**：
+  ```text
+  /wiki-curator
+  ```
+- **自然语言直接唤醒**：
+  ```text
+  "帮我整理一下当前项目的 Wiki 并更新暂存区"
+  "把 docs 目录下的最新文档编目并同步至 Wiki Staging"
+  "初始化当前仓库的 GitHub Wiki 自动化体系"
+  ```
+
+---
+
+### 8.3 典型场景一：全新仓库从零接入实战 (Onboarding a New Repo)
+
+当在一个**从未配置过 Wiki 自动化体系**的全新代码仓库中唤醒 `/wiki-curator` 时，技能将依次触发以下自动化向导：
+
+1. **Step 1: 文档源智能探测**
+   - 技能自动递归检查代码根目录，若发现 `docs/` 或 `doc/` 等目录，会主动提问确认：“检测到文档源为 `docs/`，是否以此为基准进行编目？”；
+   - 若项目文档存放在非标准路径（如 `src/site/markdown/`），用户只需在对话中回复路径即可。
+2. **Step 2: 自动部署 CI 脚手架**
+   - 技能自动检测工程必要文件，并一键无感知创建：
+     - `.github/workflows/wiki-sync.yml`（GitHub Actions 自动化流水线）；
+     - `.gitattributes`（注入 `doc/wiki_staging/*.md text eol=lf` 换行防护）；
+     - `scripts/build-wiki-staging.ps1`（本地规则式转换与大纲提取引擎）；
+     - `doc/wiki_staging/`（受控暂存发布目录）；
+     - 更新 `.gitignore` 排除本地 `.wiki/` 临时克隆目录。
+3. **Step 3: 首次手动操作引导**
+   - 技能输出格式化的交互提示卡片，引导用户完成两大必要操作：
+     - ① 在 GitHub 网页端点击 **Wiki -> Create the first page -> Save Page**（激活底层的 `.wiki.git` 存储库，防止 CI 克隆报 404）；
+     - ② 在 GitHub 申请带 `repo` 权限的 Classic Token，并在仓库 Settings 配置为 Secret `WIKI_SYNC_TOKEN`（解决 403 权限问题）。
+
+---
+
+### 8.4 典型场景二：成熟仓库的常规增量编目 (Daily Maintenance)
+
+对于已经完成前置配置的成熟仓库（如本项目 `wvp-GB28181-pro`），唤醒 `/wiki-curator` 时，技能自动跳过 Step 1~3，**直接秒级进入 Step 4 常规更新闭环**：
+
+1. **AI 智能解析与重构**：
+   - 扫描 `doc/reaticle_docs/` 及其所有子目录（新增的 `feats/`、`research/`、`debug/` 等）；
+   - 智能提炼每篇文档的标题大纲与业务分类；
+   - 自动生成符合模块分类的全局侧边栏 `_Sidebar.md` 和全景主页 `Home.md`；
+   - 自动重写内部相对路径超链接与 GitHub Blob 源码链接，输出至 `doc/wiki_staging/`。
+2. **生成审查摘要与提交指引**：
+   - 技能输出变更清单（如：“已更新 16 篇 Wiki 页面，新增 3 个模块分类”）；
+   - 给出标准 Git 提交命令提示：
+     ```bash
+     git add doc/wiki_staging/
+     git commit -m "docs(wiki): update wiki staging for latest architecture docs"
+     git push origin master
+     ```
+   - 提交推送到 GitHub 后，云端 Actions 在 30 秒内自动完成 Wiki 门户的线上更新。
+
+---
+
+### 8.5 异常排查与降级机制 (Troubleshooting & Fallback)
+
+| 异常现象 | 根本诱因 | 解决方案 |
+| :--- | :--- | :--- |
+| **CI 报错：`Repository not found (404)`** | GitHub 远端尚未物理创建 `.wiki.git` 存储库。 | 打开 GitHub 仓库页面，点击 **Wiki** 标签页，点击 **Create the first page**，任意输入内容并点击 **Save Page**。 |
+| **CI 报错：`The requested URL returned error: 403 Forbidden`** | 未配置 `WIKI_SYNC_TOKEN`，或 Token 缺少 `repo` 写入权限。 | 参考本方案 7.2 节，重新生成勾选了顶级 `repo` 作用域的 Classic Token，更新仓库 Actions Secret。 |
+| **离线或无 AI 运行环境** | 纯脚本环境或离线断网，无法调用大模型。 | **规则引擎完全降级可用**：直接在终端执行 `pwsh scripts/build-wiki-staging.ps1`，脚本内嵌了确定性命名映射与模板生成引擎，无需 AI 也能 100% 正确输出暂存文件。 |
+| **Wiki 页面间跳转出现 404** | 引用路径包含了 `.md` 后缀或使用了多级相对路径。 | 运行 `build-wiki-staging.ps1` 重新清洗，所有内部链接将自动转换为 Wiki 规范的扁平锚点（如 `[Title](Compile-and-Dev-Guide)`）。 |

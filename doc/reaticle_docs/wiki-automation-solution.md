@@ -292,3 +292,84 @@ sequenceDiagram
     CI->>Wiki: 检出 Wiki 仓库，镜像比对并自动 Push
     Wiki-->>Dev: 浏览器访问 Wiki 即可查阅最新发布的知识库
 ```
+
+---
+
+## 8. 全局通用 AI 编目技能 (wiki-curator) 使用指南
+
+为了将 Wiki 编目能力固化为可复用的工程资产，本项目已在用户全局配置中装配了专用的知识库编目技能：[wiki-curator/SKILL.md](file:///c:/Users/Reaticle/.gemini/config/skills/wiki-curator/SKILL.md)。无论是维护本项目，还是迁移到任何全新的 Git 代码仓库，均可直接唤醒此技能。
+
+### 8.1 技能定位与核心特性
+1. **全局可用，跨仓零迁移成本**：安装在全局技能库（`~/.gemini/config/skills/wiki-curator/`），在任何工作区、任何代码仓库均可随时调用；
+2. **四阶段自适应状态机 (Adaptive State Machine)**：技能能够自动识别当前仓库的成熟度（是全新仓库还是已配置仓库），智能流转在“源路径确认”、“CI 脚手架自动注入”、“首次凭据引导”与“常规秒级增量更新”之间；
+3. **安全受控（零越权 Push）**：技能始终恪守只在本地工作区生成受控暂存区 `doc/wiki_staging/` 的安全约束，不进行静默的远程 Git 推送，所有变更对开发者完全可见、可审、可追溯。
+
+---
+
+### 8.2 唤醒方式与交互协议
+
+在 Antigravity IDE 或任意支持 Agent 技能的对话界面中，可通过以下任一方式唤醒：
+
+- **斜杠命令唤醒（推荐，最快捷）**：
+  ```text
+  /wiki-curator
+  ```
+- **自然语言直接唤醒**：
+  ```text
+  "帮我整理一下当前项目的 Wiki 并更新暂存区"
+  "把 docs 目录下的最新文档编目并同步至 Wiki Staging"
+  "初始化当前仓库的 GitHub Wiki 自动化体系"
+  ```
+
+---
+
+### 8.3 典型场景一：全新仓库从零接入实战 (Onboarding a New Repo)
+
+当在一个**从未配置过 Wiki 自动化体系**的全新代码仓库中唤醒 `/wiki-curator` 时，技能将依次触发以下自动化向导：
+
+1. **Step 1: 文档源智能探测**
+   - 技能自动递归检查代码根目录，若发现 `docs/` 或 `doc/` 等目录，会主动提问确认：“检测到文档源为 `docs/`，是否以此为基准进行编目？”；
+   - 若项目文档存放在非标准路径（如 `src/site/markdown/`），用户只需在对话中回复路径即可。
+2. **Step 2: 自动部署 CI 脚手架**
+   - 技能自动检测工程必要文件，并一键无感知创建：
+     - `.github/workflows/wiki-sync.yml`（GitHub Actions 自动化流水线）；
+     - `.gitattributes`（注入 `doc/wiki_staging/*.md text eol=lf` 换行防护）；
+     - `scripts/build-wiki-staging.ps1`（本地规则式转换与大纲提取引擎）；
+     - `doc/wiki_staging/`（受控暂存发布目录）；
+     - 更新 `.gitignore` 排除本地 `.wiki/` 临时克隆目录。
+3. **Step 3: 首次手动操作引导**
+   - 技能输出格式化的交互提示卡片，引导用户完成两大必要操作：
+     - ① 在 GitHub 网页端点击 **Wiki -> Create the first page -> Save Page**（激活底层的 `.wiki.git` 存储库，防止 CI 克隆报 404）；
+     - ② 在 GitHub 申请带 `repo` 权限的 Classic Token，并在仓库 Settings 配置为 Secret `WIKI_SYNC_TOKEN`（解决 403 权限问题）。
+
+---
+
+### 8.4 典型场景二：成熟仓库的常规增量编目 (Daily Maintenance)
+
+对于已经完成前置配置的成熟仓库（如本项目 `wvp-GB28181-pro`），唤醒 `/wiki-curator` 时，技能自动跳过 Step 1~3，**直接秒级进入 Step 4 常规更新闭环**：
+
+1. **AI 智能解析与重构**：
+   - 扫描 `doc/reaticle_docs/` 及其所有子目录（新增的 `feats/`、`research/`、`debug/` 等）；
+   - 智能提炼每篇文档的标题大纲与业务分类；
+   - 自动生成符合模块分类的全局侧边栏 `_Sidebar.md` 和全景主页 `Home.md`；
+   - 自动重写内部相对路径超链接与 GitHub Blob 源码链接，输出至 `doc/wiki_staging/`。
+2. **生成审查摘要与提交指引**：
+   - 技能输出变更清单（如：“已更新 16 篇 Wiki 页面，新增 3 个模块分类”）；
+   - 给出标准 Git 提交命令提示：
+     ```bash
+     git add doc/wiki_staging/
+     git commit -m "docs(wiki): update wiki staging for latest architecture docs"
+     git push origin master
+     ```
+   - 提交推送到 GitHub 后，云端 Actions 在 30 秒内自动完成 Wiki 门户的线上更新。
+
+---
+
+### 8.5 异常排查与降级机制 (Troubleshooting & Fallback)
+
+| 异常现象 | 根本诱因 | 解决方案 |
+| :--- | :--- | :--- |
+| **CI 报错：`Repository not found (404)`** | GitHub 远端尚未物理创建 `.wiki.git` 存储库。 | 打开 GitHub 仓库页面，点击 **Wiki** 标签页，点击 **Create the first page**，任意输入内容并点击 **Save Page**。 |
+| **CI 报错：`The requested URL returned error: 403 Forbidden`** | 未配置 `WIKI_SYNC_TOKEN`，或 Token 缺少 `repo` 写入权限。 | 参考本方案 7.2 节，重新生成勾选了顶级 `repo` 作用域的 Classic Token，更新仓库 Actions Secret。 |
+| **离线或无 AI 运行环境** | 纯脚本环境或离线断网，无法调用大模型。 | **规则引擎完全降级可用**：直接在终端执行 `pwsh scripts/build-wiki-staging.ps1`，脚本内嵌了确定性命名映射与模板生成引擎，无需 AI 也能 100% 正确输出暂存文件。 |
+| **Wiki 页面间跳转出现 404** | 引用路径包含了 `.md` 后缀或使用了多级相对路径。 | 运行 `build-wiki-staging.ps1` 重新清洗，所有内部链接将自动转换为 Wiki 规范的扁平锚点（如 `[Title](Compile-and-Dev-Guide)`）。 |
