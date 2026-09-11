@@ -53,7 +53,9 @@
           <el-form-item label="其他选项">
             <el-checkbox v-model="form.ssrcCheck" label="SSRC校验" style="float: left" />
             <el-checkbox v-model="form.asMessageChannel" label="作为消息通道" style="float: left" />
-            <el-checkbox v-model="form.broadcastPushAfterAck" label="收到ACK后发流" style="float: left" />
+            <el-tooltip content="语音喊话发流时机：海康等标准设备建议开启（等待设备回复ACK后再推流）；大华等设备建议关闭（回复200 OK立即推流），防止设备握手超时。" placement="top">
+              <el-checkbox v-model="form.broadcastPushAfterAck" label="收到ACK后发流" style="float: left" />
+            </el-tooltip>
           </el-form-item>
           <el-form-item>
             <div style="float: right;">

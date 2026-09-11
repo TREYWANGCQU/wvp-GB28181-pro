@@ -39,6 +39,11 @@ public class UserSetting {
     private Integer playTimeout = 10000;
 
     /**
+     * 语音广播等待设备反向INVITE超时时间,单位：毫秒
+     */
+    private Integer broadcastInviteTimeout = 3000;
+
+    /**
      * 获取设备录像数据超时时间,单位：毫秒
      */
     private Integer recordInfoTimeout = 15000;

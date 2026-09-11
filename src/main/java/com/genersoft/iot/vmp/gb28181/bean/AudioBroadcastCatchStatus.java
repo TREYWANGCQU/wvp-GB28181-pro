@@ -12,4 +12,6 @@ public enum AudioBroadcastCatchStatus {
     WaiteInvite,
     // 收到invite消息
     Ok,
+    // 已自适应降级为Talk对讲
+    FallbackToTalk,
 }

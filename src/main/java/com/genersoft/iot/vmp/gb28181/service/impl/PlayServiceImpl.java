@@ -495,6 +495,11 @@ public class PlayServiceImpl implements IPlayService {
 
     private void talk(MediaServer mediaServerItem, Device device, DeviceChannel channel, String stream,
                       SipSubscribe.Event errorEvent, Runnable timeoutCallback, AudioBroadcastEvent audioEvent) {
+        talk(mediaServerItem, device, channel, MediaStreamUtil.GB28181_TALK, stream, errorEvent, timeoutCallback, audioEvent);
+    }
+
+    private void talk(MediaServer mediaServerItem, Device device, DeviceChannel channel, String app, String stream,
+                      SipSubscribe.Event errorEvent, Runnable timeoutCallback, AudioBroadcastEvent audioEvent) {
 
         String ySsrc = ssrcFactory.getPlaySsrc(mediaServerItem);
 
@@ -505,7 +510,7 @@ public class PlayServiceImpl implements IPlayService {
         String sendSsrc = sendSsrcFactory.getSendSsrc("0");
         SendRtpInfo sendRtpInfo;
         try {
-            sendRtpInfo = sendRtpServerService.createSendRtpInfo(mediaServerItem, null, null, sendSsrc, device.getDeviceId(), MediaStreamUtil.GB28181_TALK, stream,
+            sendRtpInfo = sendRtpServerService.createSendRtpInfo(mediaServerItem, null, null, sendSsrc, device.getDeviceId(), app, stream,
                     channel.getId(), true, false);
             if (sendRtpInfo == null) {
                 audioEvent.call("获取发流端口失败");
@@ -1336,22 +1341,84 @@ public class PlayServiceImpl implements IPlayService {
             // 发送成功
             AudioBroadcastCatch audioBroadcastCatch = new AudioBroadcastCatch(device.getDeviceId(), deviceChannel.getId(), mediaServerItem, app, stream, event, AudioBroadcastCatchStatus.Ready, isFromPlatform);
             audioBroadcastManager.update(audioBroadcastCatch);
-            // 等待invite消息， 超时则结束
+            // 等待invite消息，超时则自适应降级为Talk
             String key = VideoManagerConstants.BROADCAST_WAITE_INVITE +  device.getDeviceId();
             if (!SipUtils.isFrontEnd(device.getDeviceId())) {
                 key += audioBroadcastCatch.getChannelId();
             }
-            dynamicTask.startDelay(key, ()->{
-                log.info("[语音广播]等待invite消息超时：{}/{}", device.getDeviceId(), deviceChannel.getDeviceId());
-                stopAudioBroadcast(device, deviceChannel);
-            }, 10*1000);
+            int broadcastWaitTimeout = (userSetting.getBroadcastInviteTimeout() != null && userSetting.getBroadcastInviteTimeout() > 0)
+                    ? userSetting.getBroadcastInviteTimeout() : 3000;
+            dynamicTask.startDelay(key, () -> {
+                log.info("[语音广播] 等待设备反向Invite消息超时({}ms)：{}/{}", broadcastWaitTimeout, device.getDeviceId(), deviceChannel.getDeviceId());
+                if (!isFromPlatform) {
+                    fallbackToTalk(device, deviceChannel, audioBroadcastCatch);
+                } else {
+                    stopAudioBroadcast(device, deviceChannel);
+                }
+            }, broadcastWaitTimeout);
         }, eventResultForError -> {
-            // 发送失败
-            log.error("语音广播发送失败： {}:{}", deviceChannel.getDeviceId(), eventResultForError.msg);
-            event.call("语音广播发送失败");
-            stopAudioBroadcast(device, deviceChannel);
+            // 发送失败（例如设备直接拒绝广播通知）
+            log.error("语音广播发送失败： {}:{}，尝试自愈降级为对讲", deviceChannel.getDeviceId(), eventResultForError.msg);
+            AudioBroadcastCatch audioBroadcastCatch = audioBroadcastManager.get(deviceChannel.getId());
+            if (audioBroadcastCatch != null && !isFromPlatform) {
+                fallbackToTalk(device, deviceChannel, audioBroadcastCatch);
+            } else {
+                if (event != null) {
+                    event.call("语音广播发送失败: " + eventResultForError.msg);
+                }
+                stopAudioBroadcast(device, deviceChannel);
+            }
         });
         return true;
+    }
+
+    @Override
+    public void fallbackToTalk(Device device, DeviceChannel channel, AudioBroadcastCatch broadcastCatch) {
+        if (device == null || channel == null || broadcastCatch == null) {
+            return;
+        }
+        synchronized (broadcastCatch) {
+            if (broadcastCatch.isFallbackToTalk()) {
+                return;
+            }
+            broadcastCatch.setFallbackToTalk(true);
+            broadcastCatch.setStatus(AudioBroadcastCatchStatus.FallbackToTalk);
+            audioBroadcastManager.update(broadcastCatch);
+        }
+        String key = VideoManagerConstants.BROADCAST_WAITE_INVITE + device.getDeviceId();
+        if (!SipUtils.isFrontEnd(device.getDeviceId())) {
+            key += channel.getId();
+        }
+        dynamicTask.stop(key);
+
+        Boolean streamReady = mediaServerService.isStreamReady(broadcastCatch.getMediaServerItem(), broadcastCatch.getApp(), broadcastCatch.getStream());
+        if (streamReady == null || !streamReady) {
+            log.warn("[语音广播自愈] WebRTC 音频推流已离线，终止降级为对讲：{}/{}", device.getDeviceId(), channel.getDeviceId());
+            stopAudioBroadcast(device, channel);
+            return;
+        }
+
+        log.info("[语音广播自愈] 设备不支持广播反向呼叫或呼叫超时，智能平滑降级为平台主动对讲(Talk)：{}/{}", device.getDeviceId(), channel.getDeviceId());
+        talk(broadcastCatch.getMediaServerItem(), device, channel, broadcastCatch.getApp(), broadcastCatch.getStream(),
+                eventResult -> {
+                    log.warn("[语音广播自愈] 降级对讲失败，{}/{}, 错误码 {} {}", device.getDeviceId(), channel.getDeviceId(), eventResult.statusCode, eventResult.msg);
+                    if (broadcastCatch.getEvent() != null) {
+                        broadcastCatch.getEvent().call("降级对讲失败: " + eventResult.msg);
+                    }
+                    stopTalk(device, channel);
+                }, () -> {
+                    log.warn("[语音广播自愈] 降级对讲超时，{}/{}", device.getDeviceId(), channel.getDeviceId());
+                    if (broadcastCatch.getEvent() != null) {
+                        broadcastCatch.getEvent().call("降级对讲超时");
+                    }
+                    stopTalk(device, channel);
+                }, errorMsg -> {
+                    log.warn("[语音广播自愈] 降级对讲错误，{}/{} {}", device.getDeviceId(), channel.getDeviceId(), errorMsg);
+                    if (broadcastCatch.getEvent() != null) {
+                        broadcastCatch.getEvent().call(errorMsg);
+                    }
+                    stopTalk(device, channel);
+                });
     }
 
     @Override
@@ -1374,7 +1441,16 @@ public class PlayServiceImpl implements IPlayService {
 
     @Override
     public void stopAudioBroadcast(Device device, DeviceChannel channel) {
-        log.info("[停止对讲] 设备：{}, 通道：{}", device.getDeviceId(), channel.getDeviceId());
+        log.info("[停止对讲/广播] 设备：{}, 通道：{}", device.getDeviceId(), channel == null ? "全部" : channel.getDeviceId());
+        if (channel != null) {
+            AudioBroadcastCatch catchItem = audioBroadcastManager.get(channel.getId());
+            if (catchItem != null && catchItem.isFallbackToTalk()) {
+                log.info("[停止对讲/广播] 通道处于降级对讲状态，调用stopTalk释放资源：{}/{}", device.getDeviceId(), channel.getDeviceId());
+                stopTalk(device, channel);
+                audioBroadcastManager.del(channel.getId());
+                return;
+            }
+        }
         List<AudioBroadcastCatch> audioBroadcastCatchList = new ArrayList<>();
         if (channel == null) {
             audioBroadcastCatchList.addAll(audioBroadcastManager.getByDeviceId(device.getDeviceId()));

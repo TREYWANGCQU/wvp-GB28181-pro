@@ -8,6 +8,14 @@
       :visible.sync="showDialog"
       @close="close()"
     >
+      <el-alert
+        v-if="!isSecureContext"
+        title="当前处于不安全 HTTP 协议，浏览器限制麦克风采集，请配置 HTTPS 证书后重试。"
+        type="error"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 12px;"
+      />
       <div style="display: flex; gap: 16px;">
         <div style="flex: 1; min-width: 0;">
           <div v-if="!showPlayer" class="player-placeholder">
@@ -28,34 +36,37 @@
         </div>
 
         <div class="broadcast-panel">
-          <div style="text-align: center;">
+          <div style="text-align: center; width: 100%;">
             <video id="audioTalkVideo" controls autoplay style="width: 0; height: 0">
               Your browser is too old which doesn't support HTML5 video.
             </video>
             <el-radio-group v-model="talkMode" size="big" @change="onModeChange">
+              <el-radio-button :label="true">对讲 (推荐)</el-radio-button>
               <el-radio-button :label="false">喊话</el-radio-button>
-              <el-radio-button :label="true">对讲</el-radio-button>
             </el-radio-group>
-            <p style="color: #909399; font-size: 14px; margin-top: 4px;">
-              {{ talkMode ? '双向语音交互，可听到设备声音' : '单向喊话，仅向设备发送语音' }}
+            <p style="color: #909399; font-size: 13px; margin-top: 6px; line-height: 1.4;">
+              {{ talkMode ? '【对讲·推荐】主动呼叫设备，双向语音通话，兼容性高' : '【喊话】向现场广播语音，需设备支持反向呼叫' }}
             </p>
+            <div v-if="!isAudioChannel" style="margin-top: 8px; padding: 6px 10px; background: #fdf6ec; border-radius: 4px; font-size: 12px; color: #e6a23c; text-align: left; line-height: 1.4;">
+              <i class="el-icon-warning-outline"></i> 当前通道为视频通道（非137音频输出通道）。若现场扬声器无声音，请确认设备是否外接有源功放/喇叭，或检查是否有专用的137通道。
+            </div>
           </div>
           <div style="text-align: center;">
             <el-button
               :type="getTalkButtonType()"
-              :disabled="talkStatus === -2"
+              :disabled="talkStatus === -2 || !isSecureContext"
               circle
               icon="el-icon-microphone"
               style="font-size: 32px; padding: 24px;"
               @click="talkButtonClick()"
             />
-            <p style="margin-top: 16px; color: #606266;">
-              <span v-if="talkStatus === -2">正在释放资源</span>
+            <p style="margin-top: 16px; color: #606266; font-size: 14px;">
+              <span v-if="talkStatus === -2"><i class="el-icon-loading"></i> 正在释放资源...</span>
               <span v-if="talkStatus === -1">点击开始{{ talkMode ? '对讲' : '喊话' }}</span>
-              <span v-if="talkStatus === 0">等待接通中...</span>
-              <span v-if="talkStatus === 1 && !talkMode">喊话中</span>
-              <span v-if="talkStatus === 1 && talkMode && !playConnected">等待接通中...</span>
-              <span v-if="talkStatus === 1 && talkMode && playConnected">对讲中</span>
+              <span v-if="talkStatus === 0"><i class="el-icon-loading"></i> 正在协商媒体格式与建立信令...</span>
+              <span v-if="talkStatus === 1 && !talkMode" style="color: #67c23a;"><i class="el-icon-microphone"></i> 广播喊话中（音频传输正常）</span>
+              <span v-if="talkStatus === 1 && talkMode && !playConnected"><i class="el-icon-loading"></i> 等待设备音频链路接通...</span>
+              <span v-if="talkStatus === 1 && talkMode && playConnected" style="color: #67c23a;"><i class="el-icon-phone-outline"></i> 双向对讲中（音频传输正常）</span>
             </p>
             <p v-if="talkStatus === 1 && talkMode && talkAudioFailed" style="margin-top: 8px;">
               <el-button
@@ -86,8 +97,9 @@ export default {
       channelId: null,
       hasAudio: false,
       streamInfo: null,
-      talkMode: false,
+      talkMode: true,
       talkStatus: -1,
+      isSecureContext: true,
       broadcastRtc: null,
       talkAudioRtc: null,
       talkAudioRetryTimer: null,
@@ -96,14 +108,31 @@ export default {
       playConnected: false
     }
   },
+  computed: {
+    isAudioChannel() {
+      if (!this.channelId) return true
+      const str = String(this.channelId)
+      if (str.length >= 13) {
+        return str.substring(10, 13) === '137'
+      }
+      return true
+    }
+  },
   created() {
     this.talkStatus = -1
+    this.checkSecureContext()
   },
   methods: {
+    checkSecureContext() {
+      if (typeof window !== 'undefined') {
+        this.isSecureContext = window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      }
+    },
     openDialog(channelId) {
       if (this.showDialog) return
+      this.checkSecureContext()
       this.channelId = channelId
-      this.talkMode = false
+      this.talkMode = true
       this.showPlayer = false
       this.streamInfo = null
       this.showDialog = true
@@ -210,8 +239,9 @@ export default {
       return '本地麦克风检测失败: ' + (error.message || error.name)
     },
     async checkMicrophoneAvailability() {
-      if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        throw new Error('当前页面不是安全上下文，浏览器无法采集麦克风音频')
+      this.checkSecureContext()
+      if (!this.isSecureContext) {
+        throw new Error('当前页面不是安全上下文（HTTPS/localhost），浏览器无法采集麦克风音频')
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('当前浏览器不支持麦克风采集')

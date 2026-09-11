@@ -78,6 +78,11 @@ public class AudioBroadcastCatch {
     private SipTransactionInfo sipTransactionInfo;
 
     /**
+     * 是否已降级为对讲
+     */
+    private boolean fallbackToTalk = false;
+
+    /**
      * 请求结果回调
      */
     private AudioBroadcastEvent event;

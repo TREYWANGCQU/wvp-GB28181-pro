@@ -80,10 +80,18 @@ public class BroadcastResponseMessageHandler extends SIPRequestProcessorParent i
             responseAck(request, Response.OK);
             if (result.equalsIgnoreCase("OK")) {
                 AudioBroadcastCatch audioBroadcastCatch = audioBroadcastManager.get(channel.getId());
-                audioBroadcastCatch.setStatus(AudioBroadcastCatchStatus.WaiteInvite);
-                audioBroadcastManager.update(audioBroadcastCatch);
-            }else {
-                playService.stopAudioBroadcast(device, channel);
+                if (audioBroadcastCatch != null) {
+                    audioBroadcastCatch.setStatus(AudioBroadcastCatchStatus.WaiteInvite);
+                    audioBroadcastManager.update(audioBroadcastCatch);
+                }
+            } else {
+                AudioBroadcastCatch audioBroadcastCatch = audioBroadcastManager.get(channel.getId());
+                if (audioBroadcastCatch != null && !audioBroadcastCatch.isFromPlatform()) {
+                    log.warn("[语音广播] 设备回复非OK（{}），尝试自动降级为对讲", reason == null ? result : result + ": " + reason);
+                    playService.fallbackToTalk(device, channel, audioBroadcastCatch);
+                } else {
+                    playService.stopAudioBroadcast(device, channel);
+                }
             }
         } catch (ParseException | SipException | InvalidArgumentException e) {
             log.error("[命令发送失败] 国标级联 语音喊话: {}", e.getMessage());

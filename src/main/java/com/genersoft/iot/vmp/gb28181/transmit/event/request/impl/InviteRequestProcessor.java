@@ -1,6 +1,7 @@
 package com.genersoft.iot.vmp.gb28181.transmit.event.request.impl;
 
 import com.genersoft.iot.vmp.common.InviteSessionType;
+import com.genersoft.iot.vmp.common.RemoteAddressInfo;
 import com.genersoft.iot.vmp.common.VideoManagerConstants;
 import com.genersoft.iot.vmp.conf.DynamicTask;
 import com.genersoft.iot.vmp.conf.SipConfig;
@@ -21,6 +22,7 @@ import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.service.ISendRtpServerService;
 import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
+import com.genersoft.iot.vmp.utils.IpPortUtil;
 import gov.nist.javax.sdp.TimeDescriptionImpl;
 import gov.nist.javax.sdp.fields.TimeField;
 import gov.nist.javax.sdp.fields.URIField;
@@ -461,6 +463,15 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
             }
             return;
         }
+        if (broadcastCatch.isFallbackToTalk()) {
+            log.warn("[语音广播] 该通道已降级为主动对讲，拒绝迟到的设备广播Invite请求：{}/{}", device.getDeviceId(), deviceChannel.getDeviceId());
+            try {
+                responseAck(request, Response.REQUEST_PENDING);
+            } catch (SipException | InvalidArgumentException | ParseException e) {
+                log.error("[命令发送失败] 回复491 REQUEST_PENDING失败: {}", e.getMessage());
+            }
+            return;
+        }
         log.info("收到设备" + inviteInfo.getRequesterId() + "的语音广播Invite请求");
         String key = VideoManagerConstants.BROADCAST_WAITE_INVITE + device.getDeviceId();
         if (!SipUtils.isFrontEnd(device.getDeviceId())) {
@@ -487,18 +498,19 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
             }
 
             //  获取支持的格式
+            // 获取支持的格式与媒体协商
             Vector mediaDescriptions = sdp.getMediaDescriptions(true);
 
-            // 查看是否支持PS 负载96
             int port = -1;
             boolean mediaTransmissionTCP = false;
             Boolean tcpActive = null;
+            boolean usePs = false;
+            int pt = 8;
+
             for (int i = 0; i < mediaDescriptions.size(); i++) {
                 MediaDescription mediaDescription = (MediaDescription) mediaDescriptions.get(i);
                 Media media = mediaDescription.getMedia();
 
-                Vector mediaFormats = media.getMediaFormats(false);
-//                    if (mediaFormats.contains("8")) {
                 port = media.getMediaPort();
                 String protocol = media.getProtocol();
                 // 区分TCP发流还是udp， 当前默认udp
@@ -513,8 +525,65 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
                         }
                     }
                 }
+
+                // 媒体格式与载荷判决
+                Vector mediaFormats = media.getMediaFormats(false);
+                Vector attributes = mediaDescription.getAttributes(false);
+
+                boolean hasPs = false;
+                boolean hasPcma = false;
+                boolean hasPcmu = false;
+
+                if (mediaFormats != null) {
+                    if (mediaFormats.contains("96")) {
+                        hasPs = true;
+                    }
+                    if (mediaFormats.contains("8")) {
+                        hasPcma = true;
+                    }
+                    if (mediaFormats.contains("0")) {
+                        hasPcmu = true;
+                    }
+                }
+
+                if (attributes != null) {
+                    for (Object attrObj : attributes) {
+                        if (attrObj instanceof Attribute) {
+                            Attribute attr = (Attribute) attrObj;
+                            try {
+                                String name = attr.getName();
+                                String val = attr.getValue();
+                                if ("rtpmap".equalsIgnoreCase(name) && val != null) {
+                                    String upperVal = val.toUpperCase();
+                                    if (upperVal.contains("PS") || upperVal.startsWith("96")) {
+                                        hasPs = true;
+                                    } else if (upperVal.contains("PCMA") || upperVal.startsWith("8")) {
+                                        hasPcma = true;
+                                    } else if (upperVal.contains("PCMU") || upperVal.startsWith("0")) {
+                                        hasPcmu = true;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                if (hasPs) {
+                    usePs = true;
+                    pt = 96;
+                } else if (hasPcma) {
+                    usePs = false;
+                    pt = 8;
+                } else if (hasPcmu) {
+                    usePs = false;
+                    pt = 0;
+                } else {
+                    usePs = false;
+                    pt = 8;
+                }
+                log.info("[语音广播] 动态媒体载荷协商结果：设备 {}/{} -> usePs={}, pt={}",
+                        device.getDeviceId(), deviceChannel.getDeviceId(), usePs, pt);
                 break;
-//                    }
             }
             if (port == -1) {
                 log.info("不支持的媒体格式，返回415");
@@ -529,6 +598,15 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
                 return;
             }
             String addressStr = sdp.getOrigin().getAddress();
+            // NAT智能纠偏：针对UDP传输，若设备SDP声明私网IP，从顶层Via头部中提取真实公网IP纠偏
+            if (!mediaTransmissionTCP && IpPortUtil.isPrivateAddress(addressStr)) {
+                RemoteAddressInfo remoteAddressInfo = SipUtils.getRemoteAddressFromRequest(request, false);
+                if (remoteAddressInfo != null && !ObjectUtils.isEmpty(remoteAddressInfo.getIp())) {
+                    log.warn("[语音NAT纠偏] 检测到设备 SDP 声明私网地址 {}:{}，纠偏为公网映射 IP: {}",
+                            addressStr, port, remoteAddressInfo.getIp());
+                    addressStr = remoteAddressInfo.getIp();
+                }
+            }
             log.info("设备{}请求语音流，地址：{}:{}，ssrc：{}, {}", inviteInfo.getRequesterId(), addressStr, port, gb28181Sdp.getSsrc(),
                     mediaTransmissionTCP ? (tcpActive ? "TCP主动" : "TCP被动") : "UDP");
 
@@ -568,8 +646,8 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
             sendRtpItem.setStatus(1);
             sendRtpItem.setApp(broadcastCatch.getApp());
             sendRtpItem.setStream(broadcastCatch.getStream());
-            sendRtpItem.setPt(8);
-            sendRtpItem.setUsePs(false);
+            sendRtpItem.setPt(pt);
+            sendRtpItem.setUsePs(usePs);
             sendRtpItem.setRtcp(false);
             sendRtpItem.setOnlyAudio(true);
             sendRtpItem.setTcp(mediaTransmissionTCP);
@@ -616,12 +694,17 @@ public class InviteRequestProcessor extends SIPRequestProcessorParent implements
             content.append("t=0 0\r\n");
 
             if (mediaTransmissionTCP) {
-                content.append("m=audio " + sendRtpItem.getLocalPort() + " TCP/RTP/AVP 8\r\n");
+                content.append("m=audio " + sendRtpItem.getLocalPort() + " TCP/RTP/AVP " + sendRtpItem.getPt() + "\r\n");
             } else {
-                content.append("m=audio " + sendRtpItem.getLocalPort() + " RTP/AVP 8\r\n");
+                content.append("m=audio " + sendRtpItem.getLocalPort() + " RTP/AVP " + sendRtpItem.getPt() + "\r\n");
             }
 
-            content.append("a=rtpmap:8 PCMA/8000/1\r\n");
+            if (sendRtpItem.isUsePs()) {
+                content.append("a=rtpmap:96 PS/90000\r\n");
+            } else {
+                String encoding = sendRtpItem.getPt() == 0 ? "PCMU" : "PCMA";
+                content.append("a=rtpmap:" + sendRtpItem.getPt() + " " + encoding + "/8000/1\r\n");
+            }
 
             content.append("a=sendonly\r\n");
             if (sendRtpItem.isTcp()) {

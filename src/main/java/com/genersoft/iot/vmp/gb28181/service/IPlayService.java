@@ -48,6 +48,8 @@ public interface IPlayService {
 
     void stopAudioBroadcast(Device device, DeviceChannel channel);
 
+    void fallbackToTalk(Device device, DeviceChannel channel, AudioBroadcastCatch broadcastCatch);
+
     void playbackPause(String streamId) throws ServiceException, InvalidArgumentException, ParseException, SipException;
 
     void playbackResume(String streamId) throws ServiceException, InvalidArgumentException, ParseException, SipException;
