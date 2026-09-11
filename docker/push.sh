@@ -1,7 +1,7 @@
-#/bin/bash
+﻿#/bin/bash
 set -e
 
-version=2.7.3
+version=2.8.0
 
 docker push polaris-tian-docker.pkg.coding.net/qt/polaris/ylcx-media:latest
 docker push polaris-tian-docker.pkg.coding.net/qt/polaris/ylcx-mysql:latest

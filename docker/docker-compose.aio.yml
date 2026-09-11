@@ -1,9 +1,9 @@
-# docker/docker-compose.aio.yml
+﻿# docker/docker-compose.aio.yml
 version: '3.8'
 
 services:
   wvp-aio:
-    image: reaticle/wvp-pro-aio:2.7.4
+    image: reaticle/wvp-pro-aio:2.8.0
     container_name: wvp-aio
     restart: always
     environment:

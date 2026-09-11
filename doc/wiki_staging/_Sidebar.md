@@ -1,6 +1,7 @@
 <!-- _Sidebar.md -->
 
 ### [🏠 首页 (Home)](Home)
+- [📢 版本发布说明 (Release Notes v2.8.0)](Release-Notes-v2.8.0)
 
 ---
 ### 🛠️ 开发与编译

@@ -2,6 +2,9 @@
 
 欢迎查阅 **WVP-PRO** 深度扩展分支的技术全景 Wiki。本项目在原生支持 **GB28181-2016 / 2022** 国标视频协议的基础上，**自研了高性能原生 ONVIF 协议支持**（WS-Discovery 局域网探测、时钟偏斜动态补偿 WS-Security、Profile 码流解析、ZLM 自动拉流接管与 PTZ 云台坐标归一化控制），并实现了 **Docker All-in-One 多架构一体化镜像极速交付（约300MB）**。
 
+> [!TIP]
+> 📢 **最新版本发布**：WVP-PRO **v2.8.0** 已正式发布！引入自研原生 ONVIF 协议栈全生命周期闭环、Docker All-in-One 四合一极简容器交付及国标级联批量导入等重大特性。详见 **[Release Notes v2.8.0](Release-Notes-v2.8.0)**。
+
 ---
 
 ## 🌟 核心特性与架构升级
@@ -52,6 +55,11 @@ flowchart TD
 ---
 
 ## 📚 知识库全景导航
+
+### 📢 0. 版本发布说明 (Release Notes)
+- **[Release Notes v2.8.0 (2026-09-11)](Release-Notes-v2.8.0)**：ONVIF 原生全协议栈全生命周期闭环、Docker All-in-One 四合一交付底座、国标级联自定义通道批量导入及语音对讲/广播解耦重构。
+
+---
 
 ### 🛠️ 1. 编译与本地开发指南
 - **[编译与开发全指南](Compile-and-Dev-Guide)**：三机分工拓扑、Windows 11 开发环境、前端/后端编译及测试机离线部署全指南。
@@ -108,9 +116,9 @@ docker run -d \
   -v /opt/wvp-aio-data/data/mysql:/var/lib/mysql \
   -v /opt/wvp-aio-data/data/record:/opt/media/bin/www/record \
   -v /opt/wvp-aio-data/logs:/opt/wvp/logs \
-  reaticle/wvp-pro-aio:2.7.4
+  reaticle/wvp-pro-aio:2.8.0
 `
-访问 http://<宿主机IP>:18080，默认账号密码：dmin / dmin。
+访问 http://<宿主机IP>:18080，默认账号密码： dmin /  dmin。
 
 ### 选项 B：源码开发启动
 1. 查阅 [编译与开发指南](Compile-and-Dev-Guide) 准备基础环境；

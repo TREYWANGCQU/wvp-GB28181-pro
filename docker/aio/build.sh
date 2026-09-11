@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # docker/aio/build.sh
 set -e
 
@@ -8,7 +8,7 @@ set -e
 
 DOCKER_USER="${DOCKER_USER:-reaticle}"
 IMAGE_NAME="${IMAGE_NAME:-wvp-pro-aio}"
-VERSION="${VERSION:-2.7.4}"
+VERSION="${VERSION:-2.8.0}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 ACTION="${1:-push}" # push 或 load
 
