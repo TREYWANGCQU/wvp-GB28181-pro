@@ -1,0 +1,57 @@
+name: Sync GitHub Wiki
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'doc/wiki_staging/**'
+      - '.github/workflows/wiki-sync.yml'
+  workflow_dispatch:
+
+# 限制同一时刻仅运行一个 Wiki 同步流水线，避免 Git Push 并发冲突
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  deploy-wiki:
+    name: Sync Staging to GitHub Wiki
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Main Repository
+        uses: actions/checkout@v4
+        with:
+          path: main-repo
+
+      - name: Checkout Wiki Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          token: ${{ secrets.WIKI_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          path: wiki-repo
+
+      - name: Sync Staged Documents to Wiki
+        run: |
+          echo "=== 正在同步 doc/wiki_staging 至 Wiki 工作区 ==="
+          # 清理除 .git 之外的历史残留页面，实现精确镜像同步
+          find wiki-repo -maxdepth 1 -not -name '.git' -not -name '.' -exec rm -rf {} +
+          cp -r main-repo/doc/wiki_staging/* wiki-repo/
+          ls -la wiki-repo/
+
+      - name: Commit and Push Changes to Wiki
+        working-directory: wiki-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo ">>> Wiki 没有任何变动，无需提交。"
+            exit 0
+          fi
+
+          echo ">>> 检测到 Wiki 内容变更，准备提交并推送..."
+          git add .
+          git commit -m "docs(wiki): sync from commit ${{ github.sha }}"
+          git push origin master
+          echo "=== Wiki 持续发布已成功完成! ==="

@@ -1,0 +1,4 @@
+# .gitattributes
+# 固化受控 Wiki 暂存区的换行符为 LF，避免跨平台 Git 提交产生换行符脏变动
+doc/wiki_staging/*.md text eol=lf
+*.sh text eol=lf
