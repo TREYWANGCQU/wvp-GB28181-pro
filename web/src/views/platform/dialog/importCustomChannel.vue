@@ -108,8 +108,19 @@ export default {
       }
       this.downloading = true
       exportCustomChannel(this.platformId)
-        .then(response => {
-          const blob = new Blob([response.data || response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        .then(async response => {
+          const resData = response.data || response
+          if (resData.type && resData.type.includes('application/json')) {
+            try {
+              const text = await resData.text()
+              const errJson = JSON.parse(text)
+              this.$message.error(errJson.msg || '下载模板失败')
+              return
+            } catch (e) {
+              // 忽略解析异常
+            }
+          }
+          const blob = new Blob([resData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
           const link = document.createElement('a')
           link.href = window.URL.createObjectURL(blob)
           link.download = `级联平台_${this.platformId}_通道编码映射表.xlsx`

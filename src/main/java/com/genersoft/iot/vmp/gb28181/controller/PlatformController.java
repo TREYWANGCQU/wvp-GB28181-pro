@@ -294,19 +294,26 @@ public class PlatformController {
 
     @Operation(summary = "导出级联平台的通道编码映射表", security = @SecurityRequirement(name = JwtUtils.HEADER))
     @Parameter(name = "platformId", description = "上级平台ID", required = true)
-    @GetMapping("/channel/custom/export")
-    public void exportCustomChannel(@RequestParam Integer platformId, HttpServletResponse response) {
+    @RequestMapping(value = "/channel/custom/export", method = {RequestMethod.GET, RequestMethod.POST})
+    public void exportCustomChannel(@RequestParam Integer platformId,
+                                    @RequestBody(required = false) List<Integer> channelIds,
+                                    HttpServletResponse response) {
         Assert.notNull(platformId, "平台ID不可为空");
         try {
+            List<PlatformChannelExcelDto> exportList = platformChannelService.getExportChannelList(platformId, channelIds);
+            if (exportList.isEmpty()) {
+                throw new ControllerException(ErrorCode.ERROR100.getCode(), "当前平台暂无已共享通道数据可供导出");
+            }
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("utf-8");
             String fileName = URLEncoder.encode("cascade_channels_" + platformId, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
             response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
 
-            List<PlatformChannelExcelDto> exportList = platformChannelService.getExportChannelList(platformId);
             EasyExcel.write(response.getOutputStream(), PlatformChannelExcelDto.class)
                     .sheet("级联通道映射表")
                     .doWrite(exportList);
+        } catch (ControllerException ce) {
+            throw ce;
         } catch (Exception e) {
             log.error("[国标级联] 导出通道编码映射表失败: {}", e.getMessage(), e);
             throw new ControllerException(ErrorCode.ERROR100.getCode(), "导出通道编码映射表失败: " + e.getMessage());

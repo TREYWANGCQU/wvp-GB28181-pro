@@ -87,11 +87,11 @@ graph TD
 ### 3.3 数据流模型（Data Flow Model）
 
 #### 3.3.1 导出数据流
-1. 客户端发起 `GET /api/platform/channel/custom/export?platformId={id}`。
-2. 控制器验证 `platformId` 有效性，注入 `HttpServletResponse`。
-3. 服务层调用 `platformChannelMapper.queryForPlatformForWebList(platformId, null, null, null, true)` 获取所有已共享通道。
-4. 将实体列表转换为 `List<PlatformChannelExcelDto>`，设置 HTTP Header：`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，编码文件名 `平台_{id}_级联通道编码映射表.xlsx`。
-5. EasyExcel 以 `@` 纯文本单元格格式写入 Response OutputStream，完成极速下载。
+1. 客户端发起 `POST /api/platform/channel/custom/export?platformId={id}`（Body 可选携带勾选的通道映射 ID 集合 `List<Integer> channelIds`）。同时兼容无 RequestBody 的 `GET` 请求。
+2. 控制器验证 `platformId` 有效性，并调用服务层 `getExportChannelList(platformId, channelIds)` 获取数据。若数据集合为空则前置拦截并返回错误码提示，杜绝生成空文件。
+3. 服务层根据 `channelIds` 判定选择导出或全量导出；构建 `List<PlatformChannelExcelDto>` 时，若未设置 `customDeviceId` 则默认回显原始国标编码 `gbDeviceId`，便于用户对照参考修改。
+4. 控制器设置 HTTP Header：`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，编码文件名 `级联平台_{id}_通道编码映射表.xlsx`。
+5. EasyExcel 以 `@` 纯文本单元格格式写入 Response OutputStream，完成极速下载；前端具备 Blob 错误 JSON 探测解析能力，避免错误响应被静默保存为破损 Excel。
 
 #### 3.3.2 导入数据流
 1. 客户端上传带有 `platformId` 和 `file` 的 MultipartRequest。

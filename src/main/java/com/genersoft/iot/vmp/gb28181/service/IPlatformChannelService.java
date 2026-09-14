@@ -59,5 +59,7 @@ public interface IPlatformChannelService {
 
     List<PlatformChannelExcelDto> getExportChannelList(Integer platformId);
 
+    List<PlatformChannelExcelDto> getExportChannelList(Integer platformId, List<Integer> channelIds);
+
     PlatformChannelImportResult importChannelCustom(Integer platformId, List<PlatformChannelExcelDto> importList);
 }

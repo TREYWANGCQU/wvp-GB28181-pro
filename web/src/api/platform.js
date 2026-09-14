@@ -140,12 +140,13 @@ export function updateCustomChannel(data) {
   })
 }
 
-// 导出级联通道编码映射表
-export function exportCustomChannel(platformId) {
+// 导出级联通道编码映射表 (支持全量或按勾选通道ID导出)
+export function exportCustomChannel(platformId, channelIds = []) {
   return request({
-    method: 'get',
+    method: 'post',
     url: `/api/platform/channel/custom/export`,
     params: { platformId },
+    data: channelIds,
     responseType: 'blob'
   })
 }

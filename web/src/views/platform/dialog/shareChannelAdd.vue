@@ -503,16 +503,35 @@ export default {
         this.$message.warning('缺少平台ID')
         return
       }
+      const channelIds = this.multipleSelection && this.multipleSelection.length > 0
+        ? this.multipleSelection.map(item => item.id).filter(id => id > 0)
+        : []
       this.exportLoading = true
-      exportCustomChannel(this.platformId)
-        .then(response => {
-          const blob = new Blob([response.data || response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      exportCustomChannel(this.platformId, channelIds)
+        .then(async response => {
+          const resData = response.data || response
+          // 检测后端返回的是否为错误 JSON Blob
+          if (resData.type && resData.type.includes('application/json')) {
+            try {
+              const text = await resData.text()
+              const errJson = JSON.parse(text)
+              this.$message.error(errJson.msg || '导出失败')
+              return
+            } catch (e) {
+              // 忽略解析异常继续向下
+            }
+          }
+          const blob = new Blob([resData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
           const link = document.createElement('a')
           link.href = window.URL.createObjectURL(blob)
           link.download = `级联平台_${this.platformId}_通道编码映射表.xlsx`
           link.click()
           window.URL.revokeObjectURL(link.href)
-          this.$message.success('导出映射表成功')
+          if (channelIds.length > 0) {
+            this.$message.success(`成功导出已选的 ${channelIds.length} 条通道映射表`)
+          } else {
+            this.$message.success('导出映射表成功')
+          }
         })
         .catch(err => {
           this.$message.error('导出映射表失败: ' + (err.message || err))

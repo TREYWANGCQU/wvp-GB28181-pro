@@ -930,18 +930,27 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
 
     @Override
     public List<PlatformChannelExcelDto> getExportChannelList(Integer platformId) {
+        return getExportChannelList(platformId, null);
+    }
+
+    @Override
+    public List<PlatformChannelExcelDto> getExportChannelList(Integer platformId, List<Integer> channelIds) {
         Assert.notNull(platformId, "上级平台ID不能为空");
         List<PlatformChannel> channelList = platformChannelMapper.queryForPlatformForWebList(platformId, null, null, null, true);
         List<PlatformChannelExcelDto> exportList = new ArrayList<>();
         if (channelList != null && !channelList.isEmpty()) {
+            Set<Integer> filterIdSet = (channelIds != null && !channelIds.isEmpty()) ? new HashSet<>(channelIds) : null;
             for (PlatformChannel channel : channelList) {
+                if (filterIdSet != null && !filterIdSet.contains(channel.getId())) {
+                    continue;
+                }
                 exportList.add(PlatformChannelExcelDto.builder()
                         .id(channel.getId())
                         .name(channel.getGbName())
                         .gbDeviceId(channel.getGbDeviceId())
                         .manufacturer(channel.getGbManufacturer())
-                        .customDeviceId(channel.getCustomDeviceId())
-                        .customName(channel.getCustomName())
+                        .customDeviceId(channel.getCustomDeviceId() != null && !channel.getCustomDeviceId().isEmpty() ? channel.getCustomDeviceId() : channel.getGbDeviceId())
+                        .customName(channel.getCustomName() != null && !channel.getCustomName().isEmpty() ? channel.getCustomName() : channel.getGbName())
                         .build());
             }
         }
