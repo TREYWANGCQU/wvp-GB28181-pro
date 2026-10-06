@@ -22,8 +22,7 @@ public class OnvifXmlBuilder {
     private static final String ENVELOPE_MEDIA_TEMPLATE =
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" " +
-            "xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\" " +
-            "xmlns:tt=\"http://www.onvif.org/ver10/schema\">\n" +
+            "xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">\n" +
             "  %s\n" +
             "  <s:Body>\n" +
             "    %s\n" +
@@ -113,7 +112,7 @@ public class OnvifXmlBuilder {
     public static String buildGetStreamUri(String headerXml, String profileToken) {
         return wrapMediaEnvelope(headerXml,
                 String.format(
-                    "<trt:GetStreamUri>\n" +
+                    "<trt:GetStreamUri xmlns:tt=\"http://www.onvif.org/ver10/schema\">\n" +
                     "  <trt:StreamSetup>\n" +
                     "    <tt:Stream>RTP-Unicast</tt:Stream>\n" +
                     "    <tt:Transport>\n" +

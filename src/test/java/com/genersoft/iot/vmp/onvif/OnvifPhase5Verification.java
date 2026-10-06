@@ -170,10 +170,10 @@ public class OnvifPhase5Verification {
         // 7. 验证大华/高敏 IPC 媒体服务命名空间隔离与微时钟采样抖动滤波
         total++;
         try {
-            // 7.1 命名空间隔离：Media 报文绝不能污染 tds/tptz
+            // 7.1 命名空间隔离：Media 报文绝不能污染 tds/tptz/tt
             String profilesXml = OnvifXmlBuilder.buildGetProfiles(null);
-            if (!profilesXml.contains("xmlns:trt") || profilesXml.contains("xmlns:tds") || profilesXml.contains("xmlns:tptz")) {
-                throw new RuntimeException("Media 报文命名空间隔离不彻底，存在命名空间污染");
+            if (!profilesXml.contains("xmlns:trt") || profilesXml.contains("xmlns:tds") || profilesXml.contains("xmlns:tptz") || profilesXml.contains("xmlns:tt")) {
+                throw new RuntimeException("Media 报文命名空间隔离不彻底，存在命名空间污染 (tds/tptz/tt)");
             }
 
             // 7.2 微时钟抖动滤波：采样抖动 -1926ms 必须被滤波归零，避免负偏移误杀防重放

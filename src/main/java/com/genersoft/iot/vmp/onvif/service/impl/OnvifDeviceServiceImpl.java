@@ -30,6 +30,8 @@ import org.dom4j.Element;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -102,10 +104,10 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
             String header = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
             String capReq = OnvifXmlBuilder.buildGetCapabilities(header);
             String capResp = soapClient.sendSoap(device.getDeviceServiceUrl(), null, capReq);
-            Map<String, String> services = OnvifXmlParser.parseCapabilities(capResp);
-            if (services.containsKey("mediaUrl")) device.setMediaServiceUrl(services.get("mediaUrl"));
-            if (services.containsKey("ptzUrl")) device.setPtzServiceUrl(services.get("ptzUrl"));
-            if (services.containsKey("imagingUrl")) device.setImagingServiceUrl(services.get("imagingUrl"));
+            int fallbackPort = (device.getPort() != null && device.getPort() > 0) ? device.getPort() : 80;
+            if (services.containsKey("mediaUrl")) device.setMediaServiceUrl(normalizeServiceUrl(services.get("mediaUrl"), fallbackPort));
+            if (services.containsKey("ptzUrl")) device.setPtzServiceUrl(normalizeServiceUrl(services.get("ptzUrl"), fallbackPort));
+            if (services.containsKey("imagingUrl")) device.setImagingServiceUrl(normalizeServiceUrl(services.get("imagingUrl"), fallbackPort));
 
             // C. 获取硬件信息
             String devInfoReq = OnvifXmlBuilder.buildGetDeviceInformation(header);
@@ -139,7 +141,9 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
             long clockOffset = device.getClockOffset() != null ? device.getClockOffset() : 0L;
             String header = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
             String profilesReq = OnvifXmlBuilder.buildGetProfiles(header);
-            String mediaUrl = device.getMediaServiceUrl() != null ? device.getMediaServiceUrl() : device.getDeviceServiceUrl();
+            int devPort = (device.getPort() != null && device.getPort() > 0) ? device.getPort() : 80;
+            String rawMediaUrl = device.getMediaServiceUrl() != null ? device.getMediaServiceUrl() : device.getDeviceServiceUrl();
+            String mediaUrl = normalizeServiceUrl(rawMediaUrl, devPort);
             String profilesResp = soapClient.sendSoap(mediaUrl, null, profilesReq);
 
             Document doc = DocumentHelper.parseText(profilesResp);
@@ -545,4 +549,24 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
     public List<OnvifChannel> getChannelsByDeviceId(Integer deviceId) {
         return channelMapper.selectByDeviceId(deviceId);
     }
+
+    private String normalizeServiceUrl(String url, int fallbackPort) {
+        if (url == null || url.trim().isEmpty()) {
+            return url;
+        }
+        try {
+            URI uri = URI.create(url.trim());
+            if (uri.getPort() == -1) {
+                int port = (fallbackPort > 0) ? fallbackPort : 80;
+                String scheme = (uri.getScheme() != null) ? uri.getScheme() : "http";
+                String host = uri.getHost();
+                String rawPath = (uri.getRawPath() != null && !uri.getRawPath().isEmpty()) ? uri.getRawPath() : "";
+                String rawQuery = (uri.getRawQuery() != null) ? "?" + uri.getRawQuery() : "";
+                return scheme + "://" + host + ":" + port + rawPath + rawQuery;
+            }
+        } catch (Exception ignored) {
+        }
+        return url;
+    }
 }
+
