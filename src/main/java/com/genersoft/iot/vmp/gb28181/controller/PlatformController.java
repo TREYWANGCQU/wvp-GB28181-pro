@@ -28,6 +28,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import com.alibaba.excel.EasyExcel;
 import com.genersoft.iot.vmp.gb28181.bean.PlatformChannelExcelDto;
 import com.genersoft.iot.vmp.gb28181.bean.PlatformChannelImportResult;
+import java.io.ByteArrayOutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -304,14 +305,18 @@ public class PlatformController {
             if (exportList.isEmpty()) {
                 throw new ControllerException(ErrorCode.ERROR100.getCode(), "当前平台暂无已共享通道数据可供导出");
             }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            EasyExcel.write(out, PlatformChannelExcelDto.class)
+                    .sheet("级联通道映射表")
+                    .doWrite(exportList);
+
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("utf-8");
             String fileName = URLEncoder.encode("cascade_channels_" + platformId, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
             response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
-
-            EasyExcel.write(response.getOutputStream(), PlatformChannelExcelDto.class)
-                    .sheet("级联通道映射表")
-                    .doWrite(exportList);
+            response.setContentLength(out.size());
+            response.getOutputStream().write(out.toByteArray());
+            response.getOutputStream().flush();
         } catch (ControllerException ce) {
             throw ce;
         } catch (Exception e) {

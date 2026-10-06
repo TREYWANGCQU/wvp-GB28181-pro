@@ -98,6 +98,8 @@ RUN apk update && apk add --no-cache \
     curl \
     tzdata \
     ca-certificates \
+    fontconfig \
+    ttf-dejavu \
     mariadb \
     mariadb-client \
     redis \
@@ -105,6 +107,7 @@ RUN apk update && apk add --no-cache \
     ffmpeg \
     libstdc++ \
     libgcc && \
+    fc-cache -f && \
     cp /usr/share/zoneinfo/${TZ} /etc/localtime && \
     echo "${TZ}" > /etc/timezone && \
     sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf 2>/dev/null || true && \

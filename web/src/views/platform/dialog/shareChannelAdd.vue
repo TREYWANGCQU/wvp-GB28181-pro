@@ -510,6 +510,11 @@ export default {
       exportCustomChannel(this.platformId, channelIds)
         .then(async response => {
           const resData = response.data || response
+          // 检测空响应或 0 字节流
+          if (!resData || (resData.size !== undefined && resData.size === 0)) {
+            this.$message.error('导出失败：服务器返回数据为空，请检查后台日志')
+            return
+          }
           // 检测后端返回的是否为错误 JSON Blob
           if (resData.type && resData.type.includes('application/json')) {
             try {
