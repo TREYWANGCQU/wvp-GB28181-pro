@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # docker/aio/build.sh
 set -e
 
