@@ -135,6 +135,26 @@ public class OnvifSecurityHeaderTest {
     }
 
     @Test
+    @DisplayName("验证微秒级/网络采样时钟抖动滤波 (<= 3000ms 归零处理)")
+    void testJitterFilter() {
+        String username = "admin";
+        String password = "password123";
+
+        // 模拟大华摄像机采样网络抖动 -1926ms
+        long jitterOffsetMillis = -1926L;
+        String headerJitter = OnvifSecurityHeader.buildHeader(username, password, jitterOffsetMillis);
+
+        Pattern createdPattern = Pattern.compile("<wsu:Created>([^<]+)</wsu:Created>");
+        Matcher matcher = createdPattern.matcher(headerJitter);
+        assertTrue(matcher.find());
+        Instant jitterCreated = Instant.parse(matcher.group(1));
+
+        // 判定：不应发生 -1.9 秒负偏移，而应贴合当前实时 UTC 秒级时间戳
+        long diffSeconds = Math.abs(Duration.between(Instant.now(), jitterCreated).getSeconds());
+        assertTrue(diffSeconds <= 1, "小幅网络抖动应被滤波归零，Created 时间戳应与当前实时 UTC 时间严格对齐");
+    }
+
+    @Test
     @DisplayName("验证空用户名或密码时的降级返回")
     public void testEmptyUserOrPassword() {
         assertEquals("<s:Header/>", OnvifSecurityHeader.buildHeader(null, "pwd", 0));

@@ -161,10 +161,34 @@ public class OnvifPhase5Verification {
             if (discoveryPort != 3702 || onvifHttpPort != 80 || rtspPort != 554 || wvpPort != 18080) {
                 throw new RuntimeException("端口矩阵配置定义异常");
             }
-            System.out.println("✔ [6/6] 端口通信矩阵与 Docker network_mode: host 组播探测网络约束核验通过");
+            System.out.println("✔ [6/7] 端口通信矩阵与 Docker network_mode: host 组播探测网络约束核验通过");
             passed++;
         } catch (Exception e) {
-            System.err.println("✘ [6/6] 端口矩阵核验失败: " + e.getMessage());
+            System.err.println("✘ [6/7] 端口矩阵核验失败: " + e.getMessage());
+        }
+
+        // 7. 验证大华/高敏 IPC 媒体服务命名空间隔离与微时钟采样抖动滤波
+        total++;
+        try {
+            // 7.1 命名空间隔离：Media 报文绝不能污染 tds/tptz
+            String profilesXml = OnvifXmlBuilder.buildGetProfiles(null);
+            if (!profilesXml.contains("xmlns:trt") || profilesXml.contains("xmlns:tds") || profilesXml.contains("xmlns:tptz")) {
+                throw new RuntimeException("Media 报文命名空间隔离不彻底，存在命名空间污染");
+            }
+
+            // 7.2 微时钟抖动滤波：采样抖动 -1926ms 必须被滤波归零，避免负偏移误杀防重放
+            String jitterHeader = OnvifSecurityHeader.buildHeader("admin", "pwd", -1926L);
+            int startIdx = jitterHeader.indexOf("<wsu:Created>") + "<wsu:Created>".length();
+            int endIdx = jitterHeader.indexOf("</wsu:Created>");
+            Instant jitterTime = Instant.parse(jitterHeader.substring(startIdx, endIdx));
+            long jitterDiff = Math.abs(Duration.between(Instant.now(), jitterTime).getSeconds());
+            if (jitterDiff > 1) {
+                throw new RuntimeException("时钟微抖动滤波异常，未正确对齐当前 UTC: " + jitterDiff + "s");
+            }
+            System.out.println("✔ [7/7] 大华/高敏 IPC 媒体服务命名空间隔离与微时钟抖动滤波核验通过");
+            passed++;
+        } catch (Exception e) {
+            System.err.println("✘ [7/7] 命名空间隔离与微抖动滤波核验失败: " + e.getMessage());
         }
 
         System.out.println("==================================================");

@@ -37,8 +37,9 @@ public class OnvifSecurityHeader {
         SECURE_RANDOM.nextBytes(nonceRaw);
         String nonceBase64 = Base64.getEncoder().encodeToString(nonceRaw);
 
-        // 2. 计算补偿后的 UTC 时间戳
-        Instant cameraAdjustedTime = Instant.now().plusMillis(clockOffsetMillis).truncatedTo(ChronoUnit.SECONDS);
+        // 2. 计算补偿后的 UTC 时间戳 (若偏差绝对值 <= 3000ms，判定为常规网络时延与秒级采样抖动，使用本机实时 UTC 时间避免误偏)
+        long effectiveOffset = Math.abs(clockOffsetMillis) > 3000 ? clockOffsetMillis : 0L;
+        Instant cameraAdjustedTime = Instant.now().plusMillis(effectiveOffset).truncatedTo(ChronoUnit.SECONDS);
         String created = cameraAdjustedTime.toString();
 
         // 3. 计算 PasswordDigest

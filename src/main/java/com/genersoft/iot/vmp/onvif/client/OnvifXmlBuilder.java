@@ -8,6 +8,39 @@ import java.util.Locale;
  */
 public class OnvifXmlBuilder {
 
+    private static final String ENVELOPE_DEVICE_TEMPLATE =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" " +
+            "xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\" " +
+            "xmlns:tt=\"http://www.onvif.org/ver10/schema\">\n" +
+            "  %s\n" +
+            "  <s:Body>\n" +
+            "    %s\n" +
+            "  </s:Body>\n" +
+            "</s:Envelope>";
+
+    private static final String ENVELOPE_MEDIA_TEMPLATE =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" " +
+            "xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\" " +
+            "xmlns:tt=\"http://www.onvif.org/ver10/schema\">\n" +
+            "  %s\n" +
+            "  <s:Body>\n" +
+            "    %s\n" +
+            "  </s:Body>\n" +
+            "</s:Envelope>";
+
+    private static final String ENVELOPE_PTZ_TEMPLATE =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" " +
+            "xmlns:tptz=\"http://www.onvif.org/ver20/ptz/wsdl\" " +
+            "xmlns:tt=\"http://www.onvif.org/ver10/schema\">\n" +
+            "  %s\n" +
+            "  <s:Body>\n" +
+            "    %s\n" +
+            "  </s:Body>\n" +
+            "</s:Envelope>";
+
     private static final String ENVELOPE_TEMPLATE =
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" " +
@@ -26,14 +59,29 @@ public class OnvifXmlBuilder {
         return String.format(ENVELOPE_TEMPLATE, safeHeader, bodyXml);
     }
 
+    public static String wrapDeviceEnvelope(String headerXml, String bodyXml) {
+        String safeHeader = (headerXml != null && !headerXml.trim().isEmpty()) ? headerXml : "<s:Header/>";
+        return String.format(ENVELOPE_DEVICE_TEMPLATE, safeHeader, bodyXml);
+    }
+
+    public static String wrapMediaEnvelope(String headerXml, String bodyXml) {
+        String safeHeader = (headerXml != null && !headerXml.trim().isEmpty()) ? headerXml : "<s:Header/>";
+        return String.format(ENVELOPE_MEDIA_TEMPLATE, safeHeader, bodyXml);
+    }
+
+    public static String wrapPtzEnvelope(String headerXml, String bodyXml) {
+        String safeHeader = (headerXml != null && !headerXml.trim().isEmpty()) ? headerXml : "<s:Header/>";
+        return String.format(ENVELOPE_PTZ_TEMPLATE, safeHeader, bodyXml);
+    }
+
     /** 1. 获取设备系统时间 (无鉴权接口) */
     public static String buildGetSystemDateAndTime() {
-        return wrapEnvelope("<s:Header/>", "<tds:GetSystemDateAndTime/>");
+        return wrapDeviceEnvelope("<s:Header/>", "<tds:GetSystemDateAndTime/>");
     }
 
     /** 2. 获取设备硬件信息 (需要鉴权) */
     public static String buildGetDeviceInformation(String headerXml) {
-        return wrapEnvelope(headerXml, "<tds:GetDeviceInformation/>");
+        return wrapDeviceEnvelope(headerXml, "<tds:GetDeviceInformation/>");
     }
 
     public static String buildGetDeviceInformation() {
@@ -42,7 +90,7 @@ public class OnvifXmlBuilder {
 
     /** 3. 获取设备服务能力集 (Capabilities) */
     public static String buildGetCapabilities(String headerXml) {
-        return wrapEnvelope(headerXml,
+        return wrapDeviceEnvelope(headerXml,
                 "<tds:GetCapabilities>\n" +
                 "  <tds:Category>All</tds:Category>\n" +
                 "</tds:GetCapabilities>");
@@ -54,7 +102,7 @@ public class OnvifXmlBuilder {
 
     /** 4. 获取所有媒体 Profile 列表 */
     public static String buildGetProfiles(String headerXml) {
-        return wrapEnvelope(headerXml, "<trt:GetProfiles/>");
+        return wrapMediaEnvelope(headerXml, "<trt:GetProfiles/>");
     }
 
     public static String buildGetProfiles() {
@@ -63,7 +111,7 @@ public class OnvifXmlBuilder {
 
     /** 5. 获取指定 Profile 的 RTSP 流地址 */
     public static String buildGetStreamUri(String headerXml, String profileToken) {
-        return wrapEnvelope(headerXml,
+        return wrapMediaEnvelope(headerXml,
                 String.format(
                     "<trt:GetStreamUri>\n" +
                     "  <trt:StreamSetup>\n" +
@@ -84,7 +132,7 @@ public class OnvifXmlBuilder {
 
     /** 6. 获取抓拍快照 Snapshot 地址 */
     public static String buildGetSnapshotUri(String headerXml, String profileToken) {
-        return wrapEnvelope(headerXml,
+        return wrapMediaEnvelope(headerXml,
                 String.format(
                     "<trt:GetSnapshotUri>\n" +
                     "  <trt:ProfileToken>%s</trt:ProfileToken>\n" +
@@ -99,7 +147,7 @@ public class OnvifXmlBuilder {
 
     /** 7. 云台平滑转动与变倍控制 (ContinuousMove) */
     public static String buildContinuousMove(String headerXml, String profileToken, double pan, double tilt, double zoom) {
-        return wrapEnvelope(headerXml,
+        return wrapPtzEnvelope(headerXml,
                 String.format(Locale.US,
                     "<tptz:ContinuousMove>\n" +
                     "  <tptz:ProfileToken>%s</tptz:ProfileToken>\n" +
@@ -118,7 +166,7 @@ public class OnvifXmlBuilder {
 
     /** 8. 云台立即停止 (Stop) */
     public static String buildStop(String headerXml, String profileToken, boolean panTilt, boolean zoom) {
-        return wrapEnvelope(headerXml,
+        return wrapPtzEnvelope(headerXml,
                 String.format(
                     "<tptz:Stop>\n" +
                     "  <tptz:ProfileToken>%s</tptz:ProfileToken>\n" +
@@ -135,7 +183,7 @@ public class OnvifXmlBuilder {
 
     /** 9. 查询预置位列表 */
     public static String buildGetPresets(String headerXml, String profileToken) {
-        return wrapEnvelope(headerXml,
+        return wrapPtzEnvelope(headerXml,
                 String.format("<tptz:GetPresets><tptz:ProfileToken>%s</tptz:ProfileToken></tptz:GetPresets>", profileToken));
     }
 
@@ -145,7 +193,7 @@ public class OnvifXmlBuilder {
 
     /** 10. 调用指定预置位 */
     public static String buildGotoPreset(String headerXml, String profileToken, String presetToken) {
-        return wrapEnvelope(headerXml,
+        return wrapPtzEnvelope(headerXml,
                 String.format(
                     "<tptz:GotoPreset>\n" +
                     "  <tptz:ProfileToken>%s</tptz:ProfileToken>\n" +

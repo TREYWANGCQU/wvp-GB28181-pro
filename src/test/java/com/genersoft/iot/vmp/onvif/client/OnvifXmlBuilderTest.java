@@ -45,4 +45,14 @@ class OnvifXmlBuilderTest {
         assertTrue(xml.contains("<trt:ProfileToken>Profile_Token_Main</trt:ProfileToken>"));
         assertTrue(xml.contains("<tt:Protocol>RTSP</tt:Protocol>"));
     }
+
+    @Test
+    @DisplayName("验证媒体服务报文命名空间严格隔离 (无 tds/tptz 污染)")
+    void testMediaNamespaceIsolation() {
+        String xml = OnvifXmlBuilder.buildGetProfiles(null);
+        assertNotNull(xml);
+        assertTrue(xml.contains("xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\""));
+        assertFalse(xml.contains("xmlns:tds"), "Media 报文绝不能包含 tds 命名空间污染");
+        assertFalse(xml.contains("xmlns:tptz"), "Media 报文绝不能包含 tptz 命名空间污染");
+    }
 }

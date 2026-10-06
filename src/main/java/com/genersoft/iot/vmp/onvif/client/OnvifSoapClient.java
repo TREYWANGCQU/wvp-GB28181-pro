@@ -61,8 +61,6 @@ public class OnvifSoapClient {
                 .uri(URI.create(serviceUrl))
                 .timeout(Duration.ofSeconds(6))
                 .header("Content-Type", "application/soap+xml; charset=utf-8")
-                .header("Accept", "application/soap+xml, multipart/related, text/html, image/jpeg, *; q=.2")
-                .header("User-Agent", "WVP-PRO/2.7.4 (ONVIF Client)")
                 .POST(HttpRequest.BodyPublishers.ofString(xml));
 
         if (soapAction != null && !soapAction.trim().isEmpty()) {
