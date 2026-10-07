@@ -101,16 +101,16 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
             log.info("[ONVIF-Device] 设备 {}:{} 时钟偏差为 {}ms", device.getIp(), device.getPort(), clockOffset);
 
             // B. 获取 Capabilities 能力集 (Media & PTZ XAddr)
-            String header = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
-            String capReq = OnvifXmlBuilder.buildGetCapabilities(header);
+            String capReq = OnvifXmlBuilder.buildGetCapabilities(OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset));
             String capResp = soapClient.sendSoap(device.getDeviceServiceUrl(), null, capReq);
+            Map<String, String> services = OnvifXmlParser.parseCapabilities(capResp);
             int fallbackPort = (device.getPort() != null && device.getPort() > 0) ? device.getPort() : 80;
             if (services.containsKey("mediaUrl")) device.setMediaServiceUrl(normalizeServiceUrl(services.get("mediaUrl"), fallbackPort));
             if (services.containsKey("ptzUrl")) device.setPtzServiceUrl(normalizeServiceUrl(services.get("ptzUrl"), fallbackPort));
             if (services.containsKey("imagingUrl")) device.setImagingServiceUrl(normalizeServiceUrl(services.get("imagingUrl"), fallbackPort));
 
-            // C. 获取硬件信息
-            String devInfoReq = OnvifXmlBuilder.buildGetDeviceInformation(header);
+            // C. 获取硬件信息 (为每个 SOAP 请求动态生成独立 WS-Security Header，防 Nonce 重放)
+            String devInfoReq = OnvifXmlBuilder.buildGetDeviceInformation(OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset));
             String devInfoResp = soapClient.sendSoap(device.getDeviceServiceUrl(), null, devInfoReq);
             Map<String, String> devInfo = OnvifXmlParser.parseDeviceInformation(devInfoResp);
             device.setManufacturer(devInfo.getOrDefault("manufacturer", "Generic"));
@@ -139,8 +139,7 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
 
         try {
             long clockOffset = device.getClockOffset() != null ? device.getClockOffset() : 0L;
-            String header = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
-            String profilesReq = OnvifXmlBuilder.buildGetProfiles(header);
+            String profilesReq = OnvifXmlBuilder.buildGetProfiles(OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset));
             int devPort = (device.getPort() != null && device.getPort() > 0) ? device.getPort() : 80;
             String rawMediaUrl = device.getMediaServiceUrl() != null ? device.getMediaServiceUrl() : device.getDeviceServiceUrl();
             String mediaUrl = normalizeServiceUrl(rawMediaUrl, devPort);
@@ -191,15 +190,17 @@ public class OnvifDeviceServiceImpl implements IOnvifDeviceService {
                 int hasPtz = (device.getPtzServiceUrl() != null &&
                         OnvifXmlParser.findElementIgnoreCase(profileElem, "PTZConfiguration") != null) ? 1 : 0;
 
-                // 查询 RTSP URL
-                String streamUriReq = OnvifXmlBuilder.buildGetStreamUri(header, token);
+                // 查询 RTSP URL (动态生成独立 WS-Security Header，杜绝 Nonce 重放)
+                String streamAuthHeader = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
+                String streamUriReq = OnvifXmlBuilder.buildGetStreamUri(streamAuthHeader, token);
                 String streamUriResp = soapClient.sendSoap(mediaUrl, null, streamUriReq);
                 String rtspUrl = OnvifXmlParser.parseStreamUri(streamUriResp);
 
-                // 查询快照 Snapshot URL
+                // 查询快照 Snapshot URL (动态生成独立 WS-Security Header，杜绝 Nonce 重放)
                 String snapUrl = null;
                 try {
-                    String snapReq = OnvifXmlBuilder.buildGetSnapshotUri(header, token);
+                    String snapAuthHeader = OnvifSecurityHeader.buildHeader(device.getUsername(), device.getPassword(), clockOffset);
+                    String snapReq = OnvifXmlBuilder.buildGetSnapshotUri(snapAuthHeader, token);
                     String snapResp = soapClient.sendSoap(mediaUrl, null, snapReq);
                     snapUrl = OnvifXmlParser.parseStreamUri(snapResp);
                 } catch (Exception ignored) {}
